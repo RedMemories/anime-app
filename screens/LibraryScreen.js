@@ -40,14 +40,39 @@ export default function LibraryScreen({ navigation }) {
     Music: 'music',
   };
 
+  // Elenco generi (nomi + mappa id) da API
+  const [genreIdByName, setGenreIdByName] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    const fetchGenres = async () => {
+      try {
+        const res = await fetch('https://api.jikan.moe/v4/genres/anime');
+        const json = await res.json();
+        const names = Array.from(
+          new Set((json?.data || []).map(g => g?.name).filter(Boolean))
+        ).sort();
+        const mapping = {};
+        (json?.data || []).forEach((g) => {
+          if (g?.name && g?.mal_id != null) mapping[g.name] = g.mal_id;
+        });
+        if (!cancelled) {
+          setAllGenres(names);
+          setGenreIdByName(mapping);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+    fetchGenres();
+    return () => { cancelled = true; };
+  }, []);
+
   const searchAnime = async () => {
     const q = query.trim();
     setPage(1);
     if (q === '') {
-      if (selectedStatuses.length > 0) {
-        await fetchByStatuses(selectedStatuses, 1);
-      } else if (selectedTypes.length > 0) {
-        await fetchByTypes(selectedTypes, 1);
+      if (selectedStatuses.length > 0 || selectedTypes.length > 0 || selectedGenres.length > 0) {
+        await fetchFiltered(1);
       } else {
         await fetchBrowse(1);
       }
@@ -310,22 +335,92 @@ export default function LibraryScreen({ navigation }) {
     }
   };
 
+  const fetchFiltered = async (pageArg = 1) => {
+    try {
+      setMode('filtered');
+      setLoading(true);
+
+      const statusQueries = (selectedStatuses || [])
+        .map(normalizeStatus)
+        .map((key) => STATUS_QUERY_MAP[key])
+        .filter(Boolean);
+
+      const typeQueries = (selectedTypes || [])
+        .map((t) => TYPE_QUERY_MAP[t])
+        .filter(Boolean);
+
+      const genreIds = (selectedGenres || [])
+        .map((g) => genreIdByName[g])
+        .filter((id) => typeof id === 'number');
+
+      const statusList = statusQueries.length > 0 ? statusQueries : [null];
+      const typeList = typeQueries.length > 0 ? typeQueries : [null];
+      const genreList = genreIds.length > 0 ? genreIds : [null];
+
+      const urls = [];
+      statusList.forEach((st) => {
+        typeList.forEach((tp) => {
+          genreList.forEach((gn) => {
+            let url = `https://api.jikan.moe/v4/anime?order_by=members&sort=desc&limit=24&sfw=true&page=${pageArg}`;
+            if (st) url += `&status=${st}`;
+            if (tp) url += `&type=${tp}`;
+            if (gn != null) url += `&genres=${gn}`;
+            urls.push(url);
+          });
+        });
+      });
+
+      if (urls.length === 0) {
+        await fetchBrowse(pageArg);
+        return;
+      }
+
+      const responses = await Promise.all(
+        urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
+      );
+
+      const merged = [];
+      const seen = new Set();
+      responses.forEach((j, i) => {
+        (j?.data || []).forEach((item, idx) => {
+          if (seen.has(item.mal_id)) return;
+          seen.add(item.mal_id);
+          merged.push({
+            ...item,
+            uniqueId: `${item.mal_id || 'unknown'}-filtered-${i}-${pageArg}-${idx}`,
+          });
+        });
+      });
+
+      const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
+      setHasNextPage(anyHasNext);
+      setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
+      setPage(pageArg);
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Sostituisci l'effetto dei filtri per usare fetchFiltered
   useEffect(() => {
     setPage(1);
-    if (selectedStatuses.length > 0) {
-      fetchByStatuses(selectedStatuses, 1);
-    } else if (selectedTypes.length > 0) {
-      fetchByTypes(selectedTypes, 1);
+    if (selectedStatuses.length > 0 || selectedTypes.length > 0 || selectedGenres.length > 0) {
+      fetchFiltered(1);
     } else {
       fetchBrowse(1);
     }
-  }, [selectedStatuses, selectedTypes]);
+  }, [selectedStatuses, selectedTypes, selectedGenres]);
 
+  // Estendi loadMore per la modalità 'filtered'
   const loadMore = () => {
     if (loading || !hasNextPage) return;
     const nextPage = page + 1;
     if (mode === 'browse') {
       fetchBrowse(nextPage);
+    } else if (mode === 'filtered') {
+      fetchFiltered(nextPage);
     } else if (mode === 'status') {
       fetchByStatuses(selectedStatuses, nextPage);
     } else if (mode === 'type') {
@@ -334,7 +429,6 @@ export default function LibraryScreen({ navigation }) {
       fetchSearchPage(query.trim(), nextPage);
     }
   };
-
   const renderItem = React.useCallback(({ item }) => {
     const imageUrl =
       item?.images?.webp?.large_image_url ||
@@ -342,19 +436,14 @@ export default function LibraryScreen({ navigation }) {
       item?.images?.jpg?.image_url ||
       'https://via.placeholder.com/300x450?text=Anime';
     return (
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => navigation.navigate('Dettagli', { anime: item })}
-      >
+      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Dettagli', { anime: item })}>
         <Image source={{ uri: imageUrl }} style={styles.image} />
         {!!item?.status && (
           <View style={[styles.statusBadge, statusBadgeStyle(item.status)]}>
             <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
           </View>
         )}
-        <Text style={styles.name} numberOfLines={1}>
-          {item.title}
-        </Text>
+        <Text style={styles.name} numberOfLines={1}>{item.title}</Text>
       </TouchableOpacity>
     );
   }, [navigation]);
