@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TextInput, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function LibraryScreen({ navigation }) {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState([]);
+  const insets = useSafeAreaInsets();
 
   const fetchBrowse = async () => {
     try {
@@ -52,6 +54,7 @@ export default function LibraryScreen({ navigation }) {
   };
 
   return (
+    <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['top']}>
     <View style={styles.container}>
       <View style={styles.searchRow}>
         <TextInput
@@ -79,6 +82,7 @@ export default function LibraryScreen({ navigation }) {
         />
       )}
     </View>
+    </SafeAreaView>
   );
 }
 

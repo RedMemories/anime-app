@@ -41,7 +41,46 @@ export default function DetailScreen({ route, navigation }) {
     loadCatalog();
   }, []);
 
+  const PREFERRED_AUDIO_LANG = 'ita';
+  const PREFER_DUBBED = true;
+
   const slug = (s) => (s || '').toLowerCase().replace(/[\W_]+/g, '');
+
+  const detectVersion = (s) => {
+    const v = (s || '').toLowerCase();
+    const isSubbed = v.includes('sub') || v.includes('hardsub');
+    const isDubbed = !isSubbed && (v.includes('dub') || v.includes('doppi') || (v.includes('ita') && !isSubbed));
+    let audioLang = null;
+    if (isDubbed) {
+      if (v.includes('ita')) audioLang = 'ita';
+      else if (v.includes('eng')) audioLang = 'eng';
+      else if (v.includes('jpn') || v.includes('jp')) audioLang = 'ja';
+    }
+    const subLangs = [];
+    if (isSubbed) {
+      if (v.includes('ita')) subLangs.push('ita');
+      if (v.includes('eng')) subLangs.push('eng');
+    }
+    return { isDubbed, isSubbed, audioLang, subLangs };
+  };
+
+  const scoreVersion = (version) => {
+    let score = 0;
+    if (PREFER_DUBBED) {
+      if (version.isDubbed) score += 10;
+      if (version.isSubbed) score -= 2;
+    } else {
+      if (version.isSubbed) score += 5;
+      if (version.isDubbed) score -= 1;
+    }
+    if (PREFERRED_AUDIO_LANG && version.audioLang === PREFERRED_AUDIO_LANG) score += 3;
+    if (PREFERRED_AUDIO_LANG && version.subLangs?.includes(PREFERRED_AUDIO_LANG)) score += 2;
+    return score;
+  };
+
+  const scoreKey = (key) => scoreVersion(detectVersion(key));
+  const scoreUrl = (url) => scoreVersion(detectVersion(url));
+
   const findUrlInCatalog = (animeObj, epNumber) => {
     if (!catalog) return null;
     const candidates = [
@@ -50,20 +89,27 @@ export default function DetailScreen({ route, navigation }) {
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
 
-    const matchEntry = Object.entries(catalog).find(([key]) => {
+    // Trova tutte le chiavi compatibili
+    const matched = Object.entries(catalog).filter(([key]) => {
       const keySlug = slug(key);
       return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
     });
-    if (!matchEntry) return null;
+    if (matched.length === 0) return null;
 
-    const [, entry] = matchEntry;
+    // Ordina le chiavi in base alla preferenza (doppiato ITA > sub ITA > altro)
+    matched.sort((a, b) => scoreKey(b[0]) - scoreKey(a[0]));
+    const [, entry] = matched[0];
+
+    // Cerca l’episodio
     const ep = (entry.episodes || []).find(e => e.number === epNumber);
     if (!ep) return null;
 
-    return ep.hls || ep.mp4 || ep.directUrl || null;
+    // Seleziona la migliore tra hls/mp4/directUrl
+    const sources = [ep.hls, ep.mp4, ep.directUrl].filter(Boolean);
+    if (sources.length === 0) return null;
+    sources.sort((u1, u2) => scoreUrl(u2) - scoreUrl(u1));
+    return sources[0];
   };
-
-
 
   const fetchEpisodes = async (page = 1) => {
     if (!anime?.mal_id) return;

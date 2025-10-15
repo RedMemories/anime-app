@@ -246,8 +246,8 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <SafeAreaView
-      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
-      edges={['top', 'bottom']}
+      style={[styles.container, { paddingTop: insets.top }]}
+      edges={['top']}
     >
       <StatusBar barStyle="light-content" backgroundColor="#111" />
       <View style={styles.header}>
@@ -285,7 +285,7 @@ export default function HomeScreen({ navigation }) {
               keyExtractor={(item) => item.uniqueId}
               renderItem={({ item }) => renderAnimeItem(item)}
               numColumns={2}
-              contentContainerStyle={[styles.searchResults, { paddingBottom: 20 + insets.bottom }]}
+              contentContainerStyle={styles.searchResults}
             />
           )}
         </View>
