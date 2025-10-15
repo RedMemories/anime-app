@@ -18,6 +18,7 @@ export default function PlayerScreen({ route, navigation }) {
     p.volume = 1;
     p.muted = false;
     p.timeUpdateEventInterval = 1;
+    p.play();
   });
 
   const [position, setPosition] = useState(0);

@@ -6,7 +6,20 @@ export default function DetailScreen({ route, navigation }) {
   const { anime } = route.params;
 
   const getPlayable = (a) => {
-    return { type: 'video', url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' };
+    // Ordine di preferenza: primo episodio -> streamUrl -> videoUrl -> prima source -> fallback
+    const epUrl = Array.isArray(a?.episodes) ? a.episodes.find(e => typeof e?.url === 'string')?.url : null;
+    const stream = typeof a?.streamUrl === 'string' ? a.streamUrl : null;
+    const direct = typeof a?.videoUrl === 'string' ? a.videoUrl : null;
+    const fromSources = Array.isArray(a?.sources) ? a.sources.find(s => typeof s?.url === 'string')?.url : null;
+
+    const url =
+      epUrl ||
+      stream ||
+      direct ||
+      fromSources ||
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+
+    return { type: 'video', url };
   };
 
   const imageUrl = anime?.images?.webp?.large_image_url
