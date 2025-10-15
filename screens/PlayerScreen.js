@@ -40,19 +40,19 @@ export default function PlayerScreen({ route, navigation }) {
           current === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
           current === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
         setIsFullscreen(landscape);
-        StatusBar.setHidden(landscape, 'fade');
+        StatusBar.setHidden(true, 'fade');
       } catch {}
     })();
-  
+
     sub = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
       const o = orientationInfo.orientation;
       const landscape =
         o === ScreenOrientation.Orientation.LANDSCAPE_LEFT ||
         o === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
       setIsFullscreen(landscape);
-      StatusBar.setHidden(landscape, 'fade');
+      StatusBar.setHidden(true, 'fade');
     });
-  
+
     return () => {
       ScreenOrientation.removeOrientationChangeListener(sub);
       ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
@@ -235,7 +235,7 @@ export default function PlayerScreen({ route, navigation }) {
         </Pressable>
       </Modal>
 
-      <StatusBar barStyle="light-content" backgroundColor="#000" />
+      <StatusBar hidden />
     </View>
   );
 }
