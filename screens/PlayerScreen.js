@@ -5,6 +5,7 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEventListener } from 'expo';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function PlayerScreen({ route, navigation }) {
   const { videoUrl, title } = route?.params || {};
@@ -85,8 +86,10 @@ export default function PlayerScreen({ route, navigation }) {
   useEventListener(player, 'playingChange', ({ isPlaying }) => {
     setIsPlaying(!!isPlaying);
   });
-  useEventListener(player, 'mutedChange', ({ isMuted }) => {
-    setIsMuted(!!isMuted);
+  // Listener eventi del player (QUI dentro al componente)
+  useEventListener(player, 'mutedChange', (payload) => {
+    const val = payload?.muted ?? payload?.isMuted ?? player.muted ?? false;
+    setIsMuted(!!val);
   });
   useEventListener(player, 'rateChange', ({ rate }) => {
     setRate(rate ?? 1);
@@ -108,7 +111,9 @@ export default function PlayerScreen({ route, navigation }) {
 
   const toggleMute = () => {
     setShowOverlay(true);
-    player.muted = !isMuted;
+    const next = !player.muted;
+    player.muted = next;
+    setIsMuted(next);
   };
 
   const setSpeed = (r) => {
@@ -305,9 +310,28 @@ const styles = StyleSheet.create({
     height: 28,
     marginHorizontal: 10,
   },
-  timeText: { color: '#fff', fontSize: 12, minWidth: 90 },
-  speedBtn: { backgroundColor: 'rgba(0,0,0,0.45)' },
-  speedText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  timeText: { color: '#fff', fontSize: 12, marginLeft: 12 },
+  bottomBtn: {
+    height: 32,
+    minWidth: 36,
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  speedBtn: {
+    width: 36,            
+    height: 32,           
+    paddingHorizontal: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+  speedText: { 
+    color: '#fff', 
+    fontSize: 12, 
+    fontWeight: '600',
+    textAlign: 'center' 
+  },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.6)',
