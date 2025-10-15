@@ -5,7 +5,6 @@ import { VideoView, useVideoPlayer } from 'expo-video';
 import { useEventListener } from 'expo';
 import Slider from '@react-native-community/slider';
 import * as ScreenOrientation from 'expo-screen-orientation';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function PlayerScreen({ route, navigation }) {
   const { videoUrl, title } = route?.params || {};
