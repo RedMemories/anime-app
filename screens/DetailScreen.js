@@ -9,6 +9,61 @@ export default function DetailScreen({ route, navigation }) {
   const [episodesPage, setEpisodesPage] = useState(1);
   const [episodesHasNextPage, setEpisodesHasNextPage] = useState(false);
   const [episodesLoading, setEpisodesLoading] = useState(false);
+  
+  const CATALOG_URL = 'https://raw.githubusercontent.com/RedMemories/anime-app/master/public/catalog.json';
+  
+  const [catalog, setCatalog] = useState(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  
+  const loadCatalog = async () => {
+    setCatalogLoading(true);
+    try {
+      const res = await fetch(`${CATALOG_URL}?t=${Date.now()}`);
+      const body = await res.text();
+      try {
+        const json = JSON.parse(body);
+        setCatalog(json);
+      } catch (parseErr) {
+        console.warn(
+          'catalog.json parse failed',
+          { status: res.status, contentType: res.headers.get('content-type') }
+        );
+        console.warn('head:', body.slice(0, 200)); 
+      }
+    } catch (e) {
+      console.warn('fetch catalog.json failed', e);
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+  
+  useEffect(() => {
+    loadCatalog();
+  }, []);
+
+  const slug = (s) => (s || '').toLowerCase().replace(/[\W_]+/g, '');
+  const findUrlInCatalog = (animeObj, epNumber) => {
+    if (!catalog) return null;
+    const candidates = [
+      slug(animeObj?.title),
+      slug(animeObj?.title_english),
+      slug(animeObj?.title_japanese),
+    ].filter(Boolean);
+
+    const matchEntry = Object.entries(catalog).find(([key]) => {
+      const keySlug = slug(key);
+      return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
+    });
+    if (!matchEntry) return null;
+
+    const [, entry] = matchEntry;
+    const ep = (entry.episodes || []).find(e => e.number === epNumber);
+    if (!ep) return null;
+
+    return ep.hls || ep.mp4 || ep.directUrl || null;
+  };
+
+
 
   const fetchEpisodes = async (page = 1) => {
     if (!anime?.mal_id) return;
@@ -30,6 +85,7 @@ export default function DetailScreen({ route, navigation }) {
   useEffect(() => {
     fetchEpisodes(1);
   }, [anime?.mal_id]);
+  
 
   const getPlayable = (a) => {
     const epUrl = Array.isArray(a?.episodes) ? a.episodes.find(e => typeof e?.url === 'string')?.url : null;
@@ -113,10 +169,13 @@ export default function DetailScreen({ route, navigation }) {
                       key={`${anime.mal_id}-ep-${ep.mal_id || idx}`}
                       style={styles.episodeItem}
                       onPress={() => {
-                        const epTitle = ep?.title || `Episodio ${ep?.mal_id || (idx + 1)}`;
+                        const num = ep?.mal_id ?? ep?.number ?? (idx + 1);
+                        const urlFromCatalog = findUrlInCatalog(anime, num);
+                        const videoUrl = urlFromCatalog || ep?.url || playable.url;
+                        const epTitle = ep?.title || `Episodio ${num}`;
                         navigation.navigate('Player', {
-                          videoUrl: playable.url,
-                          type: playable.type,
+                          videoUrl,
+                          type: 'video',
                           title: `${anime.title} - ${epTitle}`
                         });
                       }}

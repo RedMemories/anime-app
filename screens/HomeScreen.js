@@ -33,14 +33,14 @@ export default function HomeScreen({ navigation }) {
     'bilibili', 'tencent', 'tencent penguin pictures', 'youku', 'iqiyi',
     'haoliners', 'yhkt', 'g.cmay', 'wawayu', 'beijing', 'shanghai'
   ];
-  const japaneseStudioNames = [
-    'madhouse', 'mappa', 'bones', 'kyoto animation', 'studio pierrot',
-    'production i.g', 'toei animation', 'sunrise', 'cloverworks',
-    'a-1 pictures', 'david production', 'wit studio', 'ufotable',
-    'tms entertainment', 'shaft', 'gonzo', 'feel', 'liden films',
-    'silver link', 'passione', 'p.a. works', 'j.c.staff', 'studio deen',
-    'doga kobo', "brain's base", 'studio bind', 'olm', 'white fox', 'trigger'
-  ];
+  // const japaneseStudioNames = [
+  //   'madhouse', 'mappa', 'bones', 'kyoto animation', 'studio pierrot',
+  //   'production i.g', 'toei animation', 'sunrise', 'cloverworks',
+  //   'a-1 pictures', 'david production', 'wit studio', 'ufotable',
+  //   'tms entertainment', 'shaft', 'gonzo', 'feel', 'liden films',
+  //   'silver link', 'passione', 'p.a. works', 'j.c.staff', 'studio deen',
+  //   'doga kobo', "brain's base", 'studio bind', 'olm', 'white fox', 'trigger'
+  // ];
   const containsKana = (s) => /[\u3040-\u30FF]/.test((s || '').toString());
   const hasJapaneseTitleKana = (item) => {
     if (containsKana(item?.title_japanese)) return true;
@@ -68,6 +68,39 @@ export default function HomeScreen({ navigation }) {
     const r = (item?.rating || '').toLowerCase();
     return r.startsWith('rx') || r.includes('r+');
   };
+  const filterAvoidChineseOnly = (list) =>
+    (list || []).filter((item) => !isChineseAffiliation(item));
+  // Normalizzazione titoli e scoring di pertinenza
+  const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
+  const tokenize = (s) => normalize(s).split(' ').filter(Boolean);
+  const titleVariants = (item) => {
+    const base = [item?.title, item?.title_english, item?.title_japanese];
+    const syns = (item?.titles || []).map(t => t?.title);
+    return [...base, ...syns].filter(Boolean).map(normalize);
+  };
+  const scoreItem = (item, q) => {
+    const nq = normalize(q);
+    const qTokens = tokenize(q);
+    let score = 0;
+    for (const v of titleVariants(item)) {
+      if (!v) continue;
+      if (v === nq) { score = Math.max(score, 100); continue; }
+      if (v.startsWith(nq)) { score = Math.max(score, 80); continue; }
+      if (v.includes(nq)) { score = Math.max(score, 60); continue; }
+      const vTokens = v.split(' ').filter(Boolean);
+      const inter = qTokens.filter(t => vTokens.includes(t)).length;
+      const ratio = qTokens.length ? inter / qTokens.length : 0;
+      score = Math.max(score, Math.round(ratio * 60));
+    }
+    return score;
+  };
+  const rankAndFilterByQuery = (list, q) => {
+    const scored = (list || []).map(item => ({ item, relevance: scoreItem(item, q) }));
+    const exact = scored.filter(s => s.relevance >= 95);
+    const keep = exact.length > 0 ? exact : scored.filter(s => s.relevance >= 60);
+    keep.sort((a, b) => b.relevance - a.relevance);
+    return keep.map(s => s.item);
+  };
   const filterJapaneseStrict = (list) =>
     (list || []).filter((item) => {
       const japanese = hasJapaneseTitleKana(item) || hasJapaneseStudio(item);
@@ -78,7 +111,7 @@ export default function HomeScreen({ navigation }) {
     fetch(endpoint)
       .then(res => res.json())
       .then(data => {
-        const filtered = filterJapaneseStrict(data.data || []);
+        const filtered = filterAvoidChineseOnly(data.data || []);
         const animeWithUniqueIds = filtered.map((item, index) => ({
           ...item,
           uniqueId: `${item.mal_id || 'unknown'}-${loadingKey}-${index}`
@@ -114,8 +147,9 @@ export default function HomeScreen({ navigation }) {
     fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&sfw=true`)
       .then(res => res.json())
       .then(data => {
-        const filtered = filterJapaneseStrict(data.data || []);
-        const resultsWithUniqueIds = filtered.map((item, index) => ({
+        const filtered = filterAvoidChineseOnly(data.data || []);
+        const ranked = rankAndFilterByQuery(filtered, query);
+        const resultsWithUniqueIds = ranked.map((item, index) => ({
           ...item,
           uniqueId: `search-${item.mal_id || 'unknown'}-${index}`
         }));
