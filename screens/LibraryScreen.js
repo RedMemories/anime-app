@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { View, Text, TextInput, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, FlatList, Image, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +15,7 @@ export default function LibraryScreen({ navigation }) {
   const [selectedGenres, setSelectedGenres] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
   const [selectedStatuses, setSelectedStatuses] = useState([]);
+  const [genreQuery, setGenreQuery] = useState('');
 
   const typeOptions = ['TV', 'Movie', 'OVA', 'ONA', 'Special', 'Music'];
   const statusOptions = [
@@ -30,12 +31,70 @@ export default function LibraryScreen({ navigation }) {
     'finished airing': 'complete',
     'not yet aired': 'upcoming',
   };
+  const TYPE_QUERY_MAP = {
+    TV: 'tv',
+    Movie: 'movie',
+    OVA: 'ova',
+    ONA: 'ona',
+    Special: 'special',
+    Music: 'music',
+  };
 
-  const allGenres = useMemo(() => {
-    const names = new Set();
-    (items || []).forEach((i) => (i?.genres || []).forEach((g) => names.add(g?.name)));
-    return Array.from(names).filter(Boolean).sort();
-  }, [items]);
+  const searchAnime = async () => {
+    const q = query.trim();
+    setPage(1);
+    if (q === '') {
+      if (selectedStatuses.length > 0) {
+        await fetchByStatuses(selectedStatuses, 1);
+      } else if (selectedTypes.length > 0) {
+        await fetchByTypes(selectedTypes, 1);
+      } else {
+        await fetchBrowse(1);
+      }
+      return;
+    }
+    await fetchSearchPage(q, 1);
+  };
+
+  const statusLabel = (s) => {
+    const n = normalizeStatus(s);
+    if (n === 'currently airing') return 'In corso';
+    if (n === 'finished airing') return 'Completato';
+    if (n === 'not yet aired') return 'In arrivo';
+    return '';
+  };
+  const statusBadgeStyle = (s) => {
+    const n = normalizeStatus(s);
+    if (n === 'currently airing') return styles.badgeAiring;
+    if (n === 'finished airing') return styles.badgeComplete;
+    if (n === 'not yet aired') return styles.badgeUpcoming;
+    return styles.badgeDefault;
+  };
+
+  // Elenco completo generi dall'API (sostituisce il vecchio useMemo basato su items)
+  const [allGenres, setAllGenres] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const fetchGenres = async () => {
+      try {
+        const res = await fetch('https://api.jikan.moe/v4/genres/anime');
+        const json = await res.json();
+        const names = Array.from(
+          new Set((json?.data || []).map(g => g?.name).filter(Boolean))
+        ).sort();
+        if (!cancelled) setAllGenres(names);
+      } catch (e) {
+        console.warn(e);
+      }
+    };
+    fetchGenres();
+    return () => { cancelled = true; };
+  }, []);
+  const filteredGenres = useMemo(() => {
+    const q = genreQuery.trim().toLowerCase();
+    if (!q) return allGenres;
+    return allGenres.filter((g) => g.toLowerCase().includes(q));
+  }, [allGenres, genreQuery]);
 
   const filteredItems = useMemo(() => {
     return (items || []).filter((item) => {
@@ -92,20 +151,36 @@ export default function LibraryScreen({ navigation }) {
     try {
       setMode('status');
       setLoading(true);
-      const queries = statusKeys
+
+      const statusQueries = (statusKeys || [])
         .map(normalizeStatus)
         .map((key) => STATUS_QUERY_MAP[key])
         .filter(Boolean);
 
-      if (queries.length === 0) {
+      if (statusQueries.length === 0) {
         await fetchBrowse(1);
         return;
       }
 
-      const urls = queries.map(
-        (q) =>
-          `https://api.jikan.moe/v4/anime?status=${q}&order_by=members&sort=desc&limit=24&sfw=true&page=${pageArg}`
-      );
+      const typeQueries = (selectedTypes || [])
+        .map((t) => TYPE_QUERY_MAP[t])
+        .filter(Boolean);
+
+      const urls = [];
+      statusQueries.forEach((q) => {
+        if (typeQueries.length > 0) {
+          typeQueries.forEach((t) => {
+            urls.push(
+              `https://api.jikan.moe/v4/anime?status=${q}&type=${t}&order_by=members&sort=desc&limit=24&sfw=true&page=${pageArg}`
+            );
+          });
+        } else {
+          urls.push(
+            `https://api.jikan.moe/v4/anime?status=${q}&order_by=members&sort=desc&limit=24&sfw=true&page=${pageArg}`
+          );
+        }
+      });
+
       const responses = await Promise.all(
         urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
       );
@@ -118,14 +193,61 @@ export default function LibraryScreen({ navigation }) {
           seen.add(item.mal_id);
           merged.push({
             ...item,
-            uniqueId: `${item.mal_id || 'unknown'}-lib-${i}-${pageArg}-${idx}`,
+            uniqueId: `${item.mal_id || 'unknown'}-status-${i}-${pageArg}-${idx}`,
           });
         });
       });
 
-      const anyHasNext = responses.some(r => !!r?.pagination?.has_next_page);
+      const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
       setHasNextPage(anyHasNext);
-      setItems(prev => pageArg === 1 ? merged : [...prev, ...merged]);
+      setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
+      setPage(pageArg);
+    } catch (e) {
+      console.warn(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchByTypes = async (typeKeys, pageArg = 1) => {
+    try {
+      setMode('type');
+      setLoading(true);
+
+      const types = (typeKeys || [])
+        .map((t) => TYPE_QUERY_MAP[t])
+        .filter(Boolean);
+
+      if (types.length === 0) {
+        await fetchBrowse(1);
+        return;
+      }
+
+      const urls = types.map(
+        (t) =>
+          `https://api.jikan.moe/v4/anime?type=${t}&order_by=members&sort=desc&limit=24&sfw=true&page=${pageArg}`
+      );
+
+      const responses = await Promise.all(
+        urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
+      );
+
+      const merged = [];
+      const seen = new Set();
+      responses.forEach((j, i) => {
+        (j?.data || []).forEach((item, idx) => {
+          if (seen.has(item.mal_id)) return;
+          seen.add(item.mal_id);
+          merged.push({
+            ...item,
+            uniqueId: `${item.mal_id || 'unknown'}-type-${i}-${pageArg}-${idx}`,
+          });
+        });
+      });
+
+      const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
+      setHasNextPage(anyHasNext);
+      setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
       setPage(pageArg);
     } catch (e) {
       console.warn(e);
@@ -138,15 +260,49 @@ export default function LibraryScreen({ navigation }) {
     try {
       setMode('search');
       setLoading(true);
-      const res = await fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`);
-      const json = await res.json();
-      const data = (json?.data || []).map((item, index) => ({
-        ...item,
-        uniqueId: `search-${item.mal_id || 'unknown'}-${pageArg}-${index}`
-      }));
-      setHasNextPage(!!json?.pagination?.has_next_page);
-      setItems(prev => pageArg === 1 ? data : [...prev, ...data]);
-      setPage(pageArg);
+
+      const typeQueries = (selectedTypes || [])
+        .map((t) => TYPE_QUERY_MAP[t])
+        .filter(Boolean);
+
+      if (typeQueries.length === 0) {
+        const res = await fetch(
+          `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`
+        );
+        const json = await res.json();
+        const data = (json?.data || []).map((item, index) => ({
+          ...item,
+          uniqueId: `search-${item.mal_id || 'unknown'}-${pageArg}-${index}`,
+        }));
+        setHasNextPage(!!json?.pagination?.has_next_page);
+        setItems((prev) => (pageArg === 1 ? data : [...prev, ...data]));
+        setPage(pageArg);
+      } else {
+        const base = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`;
+        const urls = typeQueries.map((t) => `${base}&type=${t}`);
+
+        const responses = await Promise.all(
+          urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
+        );
+
+        const merged = [];
+        const seen = new Set();
+        responses.forEach((j, i) => {
+          (j?.data || []).forEach((item, idx) => {
+            if (seen.has(item.mal_id)) return;
+            seen.add(item.mal_id);
+            merged.push({
+              ...item,
+              uniqueId: `search-${item.mal_id || 'unknown'}-type-${i}-${pageArg}-${idx}`,
+            });
+          });
+        });
+
+        const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
+        setHasNextPage(anyHasNext);
+        setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
+        setPage(pageArg);
+      }
     } catch (e) {
       console.warn(e);
     } finally {
@@ -158,27 +314,28 @@ export default function LibraryScreen({ navigation }) {
     setPage(1);
     if (selectedStatuses.length > 0) {
       fetchByStatuses(selectedStatuses, 1);
+    } else if (selectedTypes.length > 0) {
+      fetchByTypes(selectedTypes, 1);
     } else {
       fetchBrowse(1);
     }
-  }, [selectedStatuses]);
+  }, [selectedStatuses, selectedTypes]);
 
-  const statusLabel = (s) => {
-    const n = normalizeStatus(s);
-    if (n === 'currently airing') return 'In corso';
-    if (n === 'finished airing') return 'Completato';
-    if (n === 'not yet aired') return 'In arrivo';
-    return '';
-  };
-  const statusBadgeStyle = (s) => {
-    const n = normalizeStatus(s);
-    if (n === 'currently airing') return styles.badgeAiring;
-    if (n === 'finished airing') return styles.badgeComplete;
-    if (n === 'not yet aired') return styles.badgeUpcoming;
-    return styles.badgeDefault;
+  const loadMore = () => {
+    if (loading || !hasNextPage) return;
+    const nextPage = page + 1;
+    if (mode === 'browse') {
+      fetchBrowse(nextPage);
+    } else if (mode === 'status') {
+      fetchByStatuses(selectedStatuses, nextPage);
+    } else if (mode === 'type') {
+      fetchByTypes(selectedTypes, nextPage);
+    } else {
+      fetchSearchPage(query.trim(), nextPage);
+    }
   };
 
-  const renderCard = ({ item }) => {
+  const renderItem = React.useCallback(({ item }) => {
     const imageUrl =
       item?.images?.webp?.large_image_url ||
       item?.images?.jpg?.large_image_url ||
@@ -195,47 +352,12 @@ export default function LibraryScreen({ navigation }) {
             <Text style={styles.statusText}>{statusLabel(item.status)}</Text>
           </View>
         )}
-        <Text style={styles.name} numberOfLines={1}>{item.title}</Text>
+        <Text style={styles.name} numberOfLines={1}>
+          {item.title}
+        </Text>
       </TouchableOpacity>
     );
-  };
-
-  const searchAnime = async () => {
-    const q = query.trim();
-    if (q === '') {
-      setMode('browse');
-      setPage(1);
-      fetchBrowse(1);
-      return;
-    }
-    setPage(1);
-    await fetchSearchPage(q, 1);
-  };
-
-  const loadMore = () => {
-    if (loading || !hasNextPage) return;
-    const nextPage = page + 1;
-    if (mode === 'browse') {
-      fetchBrowse(nextPage);
-    } else if (mode === 'status') {
-      fetchByStatuses(selectedStatuses, nextPage);
-    } else {
-      fetchSearchPage(query.trim(), nextPage);
-    }
-  };
-
-  const renderItem = ({ item }) => {
-    const imageUrl = item?.images?.webp?.large_image_url
-      || item?.images?.jpg?.large_image_url
-      || item?.images?.jpg?.image_url
-      || 'https://via.placeholder.com/300x450?text=Anime';
-    return (
-      <TouchableOpacity style={styles.card} onPress={() => navigation.navigate('Dettagli', { anime: item })}>
-        <Image source={{ uri: imageUrl }} style={styles.image} />
-        <Text style={styles.name} numberOfLines={1}>{item.title}</Text>
-      </TouchableOpacity>
-    );
-  };
+  }, [navigation]);
 
   return (
     <SafeAreaView style={[styles.container, { paddingTop: insets.top }]} edges={['top']}>
@@ -260,12 +382,17 @@ export default function LibraryScreen({ navigation }) {
             data={filteredItems}
             key={`grid-${NUM_COLS}`}
             keyExtractor={(item) => item.uniqueId}
-            renderItem={renderCard}
+            renderItem={renderItem}
             numColumns={NUM_COLS}
             columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 12 }}
             contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
             onEndReached={loadMore}
             onEndReachedThreshold={0.4}
+            initialNumToRender={24}
+            maxToRenderPerBatch={24}
+            windowSize={5}
+            updateCellsBatchingPeriod={50}
+            removeClippedSubviews={true}
             ListFooterComponent={
               loading && hasNextPage && page > 1 ? (
                 <View style={{ paddingVertical: 16 }}>
@@ -297,63 +424,112 @@ export default function LibraryScreen({ navigation }) {
                 onPress={() => setShowFilters(false)}
               />
               <View style={styles.filterPopover}>
-                <Text style={styles.popoverTitle}>Filtri</Text>
+                <LinearGradient
+                  colors={['#1f1f1f', '#171717']}
+                  style={styles.popoverHeader}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                >
+                  <Text style={styles.popoverTitle}>Filtri</Text>
+                  <TouchableOpacity style={styles.closeBtn} onPress={() => setShowFilters(false)}>
+                    <Ionicons name="close" size={20} color="#fff" />
+                  </TouchableOpacity>
+                </LinearGradient>
 
-                {/* Generi */}
-                <View style={styles.filterSection}>
-                  <Text style={styles.sectionLabel}>Generi</Text>
-                  <View style={styles.chipsWrap}>
-                    {allGenres.map((g) => {
-                      const selected = selectedGenres.includes(g);
-                      return (
-                        <TouchableOpacity
-                          key={`genre-${g}`}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          onPress={() => toggleSelection(selectedGenres, setSelectedGenres, g)}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{g}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                <View style={styles.sheetHandle} />
+
+                {/* Contenuto scrollabile centrale: riceve spazio grazie a flexGrow/flexShrink */}
+                <ScrollView style={styles.popoverScroll} contentContainerStyle={styles.popoverContent}>
+                  {/* Generi */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionLabel}>Generi</Text>
+                    <TextInput
+                      placeholder="Filtra generi..."
+                      placeholderTextColor="#999"
+                      style={styles.genreInput}
+                      value={genreQuery}
+                      onChangeText={setGenreQuery}
+                    />
+                    <View style={styles.chipsWrap}>
+                      {filteredGenres.map((g) => {
+                        const selected = selectedGenres.includes(g);
+                        return (
+                          <TouchableOpacity
+                            key={`genre-${g}`}
+                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => toggleSelection(selectedGenres, setSelectedGenres, g)}
+                          >
+                            <Ionicons
+                              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                              size={16}
+                              color={selected ? '#ff5722' : '#bbb'}
+                              style={styles.chipIcon}
+                            />
+                            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                              {g}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
-                </View>
 
-                <View style={styles.filterSection}>
-                  <Text style={styles.sectionLabel}>Tipo</Text>
-                  <View style={styles.chipsWrap}>
-                    {typeOptions.map((t) => {
-                      const selected = selectedTypes.includes(t);
-                      return (
-                        <TouchableOpacity
-                          key={`type-${t}`}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          onPress={() => toggleSelection(selectedTypes, setSelectedTypes, t)}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{t}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  {/* Tipo */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionLabel}>Tipo</Text>
+                    <View style={styles.chipsWrap}>
+                      {typeOptions.map((t) => {
+                        const selected = selectedTypes.includes(t);
+                        return (
+                          <TouchableOpacity
+                            key={`type-${t}`}
+                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => toggleSelection(selectedTypes, setSelectedTypes, t)}
+                          >
+                            <Ionicons
+                              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                              size={16}
+                              color={selected ? '#ff5722' : '#bbb'}
+                              style={styles.chipIcon}
+                            />
+                            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                              {t}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
-                </View>
 
-                <View style={styles.filterSection}>
-                  <Text style={styles.sectionLabel}>Stato</Text>
-                  <View style={styles.chipsWrap}>
-                    {statusOptions.map((s) => {
-                      const selected = selectedStatuses.includes(s.key);
-                      return (
-                        <TouchableOpacity
-                          key={`status-${s.key}`}
-                          style={[styles.chip, selected && styles.chipSelected]}
-                          onPress={() => toggleSelection(selectedStatuses, setSelectedStatuses, s.key)}
-                        >
-                          <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{s.label}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
+                  {/* Stato */}
+                  <View style={styles.filterSection}>
+                    <Text style={styles.sectionLabel}>Stato</Text>
+                    <View style={styles.chipsWrap}>
+                      {statusOptions.map((s) => {
+                        const selected = selectedStatuses.includes(s.key);
+                        return (
+                          <TouchableOpacity
+                            key={`status-${s.key}`}
+                            style={[styles.chip, selected && styles.chipSelected]}
+                            onPress={() => toggleSelection(selectedStatuses, setSelectedStatuses, s.key)}
+                          >
+                            <Ionicons
+                              name={selected ? 'checkmark-circle' : 'ellipse-outline'}
+                              size={16}
+                              color={selected ? '#ff5722' : '#bbb'}
+                              style={styles.chipIcon}
+                            />
+                            <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                              {s.label}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
                   </View>
-                </View>
+                </ScrollView>
 
+                {/* Azioni fisse in basso */}
                 <View style={styles.filterActions}>
                   <TouchableOpacity style={styles.clearBtn} onPress={clearFilters}>
                     <Text style={styles.clearText}>Pulisci</Text>
@@ -410,31 +586,74 @@ const styles = StyleSheet.create({
     padding: 12
   },
   filterPopover: {
-    backgroundColor: '#1a1a1a',
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: '#121212',
+    borderRadius: 16,
+    overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#333',
-    maxHeight: '60%'
+    maxHeight: '75%'
   },
-  popoverTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', marginBottom: 8 },
-  filterSection: { marginBottom: 8 },
-  sectionLabel: { color: '#fff', fontWeight: 'bold', marginBottom: 6 },
-  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  popoverHeader: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  popoverTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  closeBtn: { padding: 6, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.08)' },
+  sheetHandle: {
+    alignSelf: 'center',
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    marginTop: 6
+  },
+  popoverScroll: { flexGrow: 1, flexShrink: 1 },
+  popoverContent: { paddingHorizontal: 14, paddingBottom: 10 },
+  filterSection: { marginTop: 12 },
+  sectionLabel: { color: '#fff', fontWeight: 'bold', marginBottom: 8 },
+  genreInput: {
+    backgroundColor: '#1f1f1f',
+    color: '#fff',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#333'
+  },
+  chipsWrap: { flexDirection: 'row', flexWrap: 'wrap' },  // se 'gap' non è supportato, lo rimuoviamo
   chip: {
-    backgroundColor: 'rgba(255,255,255,0.12)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.10)',
     borderWidth: 1,
     borderColor: 'transparent',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 18
+    paddingVertical: 8,
+    borderRadius: 18,
+    marginRight: 8,
+    marginBottom: 8
   },
-  chipSelected: { backgroundColor: 'rgba(255, 87, 34, 0.25)', borderColor: '#ff5722' },
-  chipText: { color: '#fff' },
+  chipSelected: { backgroundColor: 'rgba(255, 87, 34, 0.22)', borderColor: '#ff5722' },
+  chipIcon: { marginRight: 4 },
+  chipText: { color: '#fff', fontSize: 13 },
   chipTextSelected: { color: '#ffeadf' },
-  filterActions: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
-  clearBtn: { backgroundColor: '#333', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  filterActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#333',
+    backgroundColor: '#121212'
+  },
+  clearBtn: { backgroundColor: '#333', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 },
   clearText: { color: '#fff', fontWeight: 'bold' },
-  applyBtn: { backgroundColor: '#ff5722', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8 },
+  applyBtn: { backgroundColor: '#ff5722', paddingHorizontal: 12, paddingVertical: 10, borderRadius: 10 },
   applyText: { color: '#fff', fontWeight: 'bold' },
   });
+
