@@ -176,7 +176,9 @@ export default function DetailScreen({ route, navigation }) {
                         navigation.navigate('Player', {
                           videoUrl,
                           type: 'video',
-                          title: `${anime.title} - ${epTitle}`
+                          title: `${anime.title} - ${epTitle}`,
+                          posterUrl: imageUrl,
+                          animeId: anime.mal_id,
                         });
                       }}
                     >
