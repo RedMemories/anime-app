@@ -1,17 +1,18 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  FlatList, 
-  Image, 
-  TouchableOpacity, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  Image,
+  TouchableOpacity,
+  StyleSheet,
   ScrollView,
   StatusBar,
   ActivityIndicator
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function HomeScreen({ navigation }) {
   const [topAnime, setTopAnime] = useState([]);
@@ -27,11 +28,58 @@ export default function HomeScreen({ navigation }) {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Filtri rafforzati: solo anime giapponesi e SFW
+  const bannedProducersOrStudios = [
+    'bilibili', 'tencent', 'tencent penguin pictures', 'youku', 'iqiyi',
+    'haoliners', 'yhkt', 'g.cmay', 'wawayu', 'beijing', 'shanghai'
+  ];
+  const japaneseStudioNames = [
+    'madhouse', 'mappa', 'bones', 'kyoto animation', 'studio pierrot',
+    'production i.g', 'toei animation', 'sunrise', 'cloverworks',
+    'a-1 pictures', 'david production', 'wit studio', 'ufotable',
+    'tms entertainment', 'shaft', 'gonzo', 'feel', 'liden films',
+    'silver link', 'passione', 'p.a. works', 'j.c.staff', 'studio deen',
+    'doga kobo', "brain's base", 'studio bind', 'olm', 'white fox', 'trigger'
+  ];
+  const containsKana = (s) => /[\u3040-\u30FF]/.test((s || '').toString());
+  const hasJapaneseTitleKana = (item) => {
+    if (containsKana(item?.title_japanese)) return true;
+    const titles = item?.titles || [];
+    return titles.some((t) =>
+      ((t.type || '').toLowerCase().includes('japanese')) && containsKana(t.title)
+    );
+  };
+  const hasJapaneseStudio = (item) => {
+    const names = [...(item?.studios || []), ...(item?.producers || [])]
+      .map((s) => (s.name || '').toLowerCase());
+    return japaneseStudioNames.some((js) => names.some((n) => n.includes(js)));
+  };
+  const isChineseAffiliation = (item) => {
+    const names = [...(item?.studios || []), ...(item?.producers || [])]
+      .map((s) => (s.name || '').toLowerCase());
+    return bannedProducersOrStudios.some((b) => names.some((n) => n.includes(b)));
+  };
+  const hasHentaiGenre = (item) => {
+    const g1 = (item?.genres || []).some((g) => (g.name || '').toLowerCase() === 'hentai');
+    const g2 = (item?.explicit_genres || []).some((g) => (g.name || '').toLowerCase() === 'hentai');
+    return g1 || g2;
+  };
+  const isAdultRating = (item) => {
+    const r = (item?.rating || '').toLowerCase();
+    return r.startsWith('rx') || r.includes('r+');
+  };
+  const filterJapaneseStrict = (list) =>
+    (list || []).filter((item) => {
+      const japanese = hasJapaneseTitleKana(item) || hasJapaneseStudio(item);
+      return !isAdultRating(item) && !hasHentaiGenre(item) && !isChineseAffiliation(item) && japanese;
+    });
+
   const fetchData = (endpoint, setter, loadingKey) => {
     fetch(endpoint)
       .then(res => res.json())
       .then(data => {
-        const animeWithUniqueIds = data.data.map((item, index) => ({
+        const filtered = filterJapaneseStrict(data.data || []);
+        const animeWithUniqueIds = filtered.map((item, index) => ({
           ...item,
           uniqueId: `${item.mal_id || 'unknown'}-${loadingKey}-${index}`
         }));
@@ -43,13 +91,15 @@ export default function HomeScreen({ navigation }) {
         setLoading(prev => ({ ...prev, [loadingKey]: false }));
       });
   };
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
-    fetchData('https://api.jikan.moe/v4/top/anime?limit=10', setTopAnime, 'top');
-    
-    fetchData('https://api.jikan.moe/v4/anime?order_by=popularity&sort=desc&limit=10', setTrendingAnime, 'trending');
-    
-    fetchData('https://api.jikan.moe/v4/anime?status=airing&order_by=start_date&sort=desc&limit=10', setNewReleases, 'new');
+    // Top (SFW)
+    fetchData('https://api.jikan.moe/v4/top/anime?limit=10&sfw=true', setTopAnime, 'top');
+    // Trending (SFW + TV + ordine desc)
+    fetchData('https://api.jikan.moe/v4/anime?status=airing&order_by=members&sort=desc&limit=10&sfw=true', setTrendingAnime, 'trending');
+    // Nuove uscite (SFW + TV)
+    fetchData('https://api.jikan.moe/v4/anime?status=airing&order_by=start_date&sort=desc&limit=10&type=tv&sfw=true', setNewReleases, 'new');
   }, []);
 
   const searchAnime = () => {
@@ -57,14 +107,15 @@ export default function HomeScreen({ navigation }) {
       setIsSearching(false);
       return;
     }
-    
+
     setIsSearching(true);
     setLoading(prev => ({ ...prev, search: true }));
-    
-    fetch(`https://api.jikan.moe/v4/anime?q=${query}`)
+
+    fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&sfw=true`)
       .then(res => res.json())
       .then(data => {
-        const resultsWithUniqueIds = data.data.map((item, index) => ({
+        const filtered = filterJapaneseStrict(data.data || []);
+        const resultsWithUniqueIds = filtered.map((item, index) => ({
           ...item,
           uniqueId: `search-${item.mal_id || 'unknown'}-${index}`
         }));
@@ -160,9 +211,11 @@ export default function HomeScreen({ navigation }) {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView
+      style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}
+      edges={['top', 'bottom']}
+    >
       <StatusBar barStyle="light-content" backgroundColor="#111" />
-      
       <View style={styles.header}>
         <TouchableOpacity 
           onPress={() => {
@@ -198,19 +251,20 @@ export default function HomeScreen({ navigation }) {
               keyExtractor={(item) => item.uniqueId}
               renderItem={({ item }) => renderAnimeItem(item)}
               numColumns={2}
-              contentContainerStyle={styles.searchResults}
+              contentContainerStyle={[styles.searchResults, { paddingBottom: 20 + insets.bottom }]}
             />
           )}
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-          {renderHero()}
           {renderHorizontalList(topAnime.slice(0, 5), 'In Evidenza', 'top', 'large')}
-          {renderHorizontalList(trendingAnime, 'Trending', 'trending')}
+          
+          {renderHorizontalList(trendingAnime, 'Popolari ora', 'trending')}
+          
           {renderHorizontalList(newReleases, 'Nuove Uscite', 'new', 'small')}
         </ScrollView>
       )}
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -218,17 +272,16 @@ const styles = StyleSheet.create({
   container: { 
     flex: 1, 
     backgroundColor: '#111', 
-    paddingTop: 10 
   },
   header: {
     paddingHorizontal: 15,
-    paddingBottom: 10
+    paddingBottom: 8
   },
   title: { 
     color: '#fff', 
-    fontSize: 28, 
+    fontSize: 24,
     fontWeight: 'bold', 
-    marginBottom: 15 
+    marginBottom: 8
   },
   searchContainer: { 
     flexDirection: 'row', 
@@ -430,8 +483,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold'
   },
   loading: { 
-    color: '#fff', 
-    textAlign: 'center', 
+    color: '#fff',
+    textAlign: 'center',
     marginTop: 20 
   },
   searchResultsContainer: {
