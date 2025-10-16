@@ -9,7 +9,9 @@ import {
   StyleSheet,
   ScrollView,
   StatusBar,
-  ActivityIndicator
+  ActivityIndicator,
+  Animated,
+  Dimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -27,6 +29,7 @@ export default function HomeScreen({ navigation }) {
   });
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
+  const scrollX = React.useRef(new Animated.Value(0)).current;
 
   // Filtri rafforzati: solo anime giapponesi e SFW
   const bannedProducersOrStudios = [
@@ -245,6 +248,100 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
+  const inEvidenza = topAnime.slice(0, 5);
+
+  const renderInnovativeCarousel = () => {
+    if (loading.top || inEvidenza.length === 0) return null;
+
+    const { width } = Dimensions.get('window');
+    const SPACING = 16;
+    const ITEM_WIDTH = Math.round(width * 0.72);
+    const ITEM_HEIGHT = Math.round(ITEM_WIDTH * 0.6);
+
+    return (
+      <View style={styles.carouselContainer}>
+        <Text style={styles.sectionTitle}>In Evidenza</Text>
+        <Animated.FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={inEvidenza}
+          keyExtractor={(item) => item.uniqueId}
+          snapToInterval={ITEM_WIDTH + SPACING}
+          decelerationRate="fast"
+          bounces={false}
+          contentContainerStyle={{ paddingHorizontal: (width - ITEM_WIDTH) / 2 }}
+          onScroll={Animated.event(
+            [{ nativeEvent: { contentOffset: { x: scrollX } } }],
+            { useNativeDriver: true }
+          )}
+          renderItem={({ item, index }) => {
+            const inputRange = [
+              (index - 1) * (ITEM_WIDTH + SPACING),
+              index * (ITEM_WIDTH + SPACING),
+              (index + 1) * (ITEM_WIDTH + SPACING),
+            ];
+            const scale = scrollX.interpolate({
+              inputRange,
+              outputRange: [0.88, 1, 0.88],
+              extrapolate: 'clamp',
+            });
+            const rotateY = scrollX.interpolate({
+              inputRange,
+              outputRange: ['6deg', '0deg', '-6deg'],
+              extrapolate: 'clamp',
+            });
+            const opacity = scrollX.interpolate({
+              inputRange,
+              outputRange: [0.65, 1, 0.65],
+              extrapolate: 'clamp',
+            });
+
+            const imageUrl =
+              item?.images?.webp?.large_image_url ||
+              item?.images?.jpg?.large_image_url ||
+              item?.images?.jpg?.image_url ||
+              null;
+            const imageSource = imageUrl ? { uri: imageUrl } : require('../assets/icon.png');
+
+            return (
+              <Animated.View
+                style={[
+                  styles.carouselItem,
+                  {
+                    width: ITEM_WIDTH,
+                    height: ITEM_HEIGHT,
+                    marginRight: SPACING,
+                    opacity,
+                    transform: [{ perspective: 1000 }, { rotateY }, { scale }],
+                  },
+                ]}
+              >
+                <TouchableOpacity
+                  activeOpacity={0.9}
+                  style={styles.carouselCard}
+                  onPress={() => navigation.navigate('Dettagli', { anime: item })}
+                >
+                  <Image source={imageSource} style={styles.carouselImage} />
+                  <LinearGradient
+                    colors={['rgba(0,0,0,0.0)', 'rgba(0,0,0,0.85)']}
+                    style={styles.carouselGradient}
+                  />
+                  <View style={styles.carouselContent}>
+                    <Text style={styles.carouselTitle} numberOfLines={1}>{item.title}</Text>
+                    <Text style={styles.carouselMeta} numberOfLines={1}>
+                      {(item.type || 'Anime')} • {(item.episodes || '?')} ep • ★ {item.score ?? 'N/A'}
+                    </Text>
+                    {/* pulsanti rimossi */}
+                  </View>
+                </TouchableOpacity>
+              </Animated.View>
+            );
+          }}
+        />
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView
       style={[styles.container, { paddingTop: insets.top }]}
@@ -292,10 +389,9 @@ export default function HomeScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView showsVerticalScrollIndicator={false}>
-          {renderHorizontalList(topAnime.slice(0, 5), 'In Evidenza', 'top', 'large')}
-          
+          {renderInnovativeCarousel()}
+          {/* {renderHorizontalList(inEvidenza, 'In Evidenza', 'top', 'large')} */}
           {renderHorizontalList(trendingAnime, 'Popolari ora', 'trending')}
-          
           {renderHorizontalList(newReleases, 'Nuove Uscite', 'new', 'small')}
         </ScrollView>
       )}
@@ -528,5 +624,49 @@ const styles = StyleSheet.create({
   },
   searchResults: {
     paddingBottom: 20
+  },
+  carouselContainer: {
+    marginBottom: 24,
+  },
+  carouselItem: {
+    borderRadius: 16,
+    overflow: 'hidden',
+  },
+  carouselCard: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#1a1a1a',
+    // ombra morbida
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+  },
+  carouselImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  carouselGradient: {
+    position: 'absolute',
+    left: 0, right: 0, top: 0, bottom: 0,
+  },
+  carouselContent: {
+    position: 'absolute',
+    bottom: 12,
+    left: 12,
+    right: 12,
+  },
+  carouselTitle: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  carouselMeta: {
+    color: '#ddd',
+    fontSize: 12,
+    marginTop: 4,
   }
 });
