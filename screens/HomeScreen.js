@@ -260,7 +260,9 @@ export default function HomeScreen({ navigation }) {
 
     return (
       <View style={styles.carouselContainer}>
-        <Text style={styles.sectionTitle}>In Evidenza</Text>
+        <View style={styles.carouselHeader}>
+          <Text style={styles.sectionTitle}>In Evidenza</Text>
+        </View>
         <Animated.FlatList
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -627,6 +629,9 @@ const styles = StyleSheet.create({
   },
   carouselContainer: {
     marginBottom: 24,
+  },
+  carouselHeader: {
+    paddingHorizontal: 15
   },
   carouselItem: {
     borderRadius: 16,
