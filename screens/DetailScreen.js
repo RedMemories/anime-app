@@ -4,12 +4,13 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 export default function DetailScreen({ route, navigation }) {
   const { anime } = route.params;
-  const [showEpisodesModal, setShowEpisodesModal] = useState(false);
+  const [showEpisodes, setShowEpisodes] = useState(false);
+  // RIMOSSO: const [showEpisodesModal, setShowEpisodesModal] = useState(false);
   const [episodes, setEpisodes] = useState([]);
   const [episodesPage, setEpisodesPage] = useState(1);
   const [episodesHasNextPage, setEpisodesHasNextPage] = useState(false);
   const [episodesLoading, setEpisodesLoading] = useState(false);
-  
+  const [descExpanded, setDescExpanded] = useState(false);
   const CATALOG_URL = 'https://raw.githubusercontent.com/RedMemories/anime-app/master/public/catalog.json';
   
   const [catalog, setCatalog] = useState(null);
@@ -168,129 +169,136 @@ export default function DetailScreen({ route, navigation }) {
 
   const cleanSynopsis = sanitizeSynopsis(anime?.synopsis) || 'Nessuna descrizione disponibile.';
   const playable = getPlayable(anime);
+  const isLongSynopsis = (cleanSynopsis || '').length > 220;
 
   return (
     <ScrollView style={styles.container}>
-      <Image source={{ uri: imageUrl }} style={styles.image} />
-      <Text style={styles.title}>{anime.title}</Text>
+      {/* HERO con immagine sfocata + overlay + contenuto */}
+      <View style={styles.hero}>
+        <Image source={{ uri: imageUrl }} style={styles.heroImage} blurRadius={3} />
+        <View style={styles.heroOverlay} />
+        <View style={styles.heroContent}>
+          <Text style={styles.heroTitle} numberOfLines={2}>{anime.title}</Text>
+          <Text style={styles.heroMeta} numberOfLines={1}>
+            {(anime.type || 'Anime')} • {(anime.episodes || '?')} ep • ★ {anime.score ?? 'N/A'}
+          </Text>
 
-      {/* Azioni: sostituisco "Guarda" con "Lista Episodi" */}
-      <View style={styles.actionsRow}>
-        <TouchableOpacity
-          style={styles.playButton}
-          onPress={() => setShowEpisodesModal(true)}
-        >
-          <Text style={styles.playButtonText}>📃 Lista Episodi</Text>
-        </TouchableOpacity>
-      </View>
-
-      <Text style={styles.sectionLabel}>Descrizione</Text>
-      <Text style={styles.text}>{cleanSynopsis}</Text>
-
-      {/* Modal Episodi Jikan */}
-      <Modal
-        visible={showEpisodesModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEpisodesModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Episodi — {anime.title}</Text>
-              <TouchableOpacity style={styles.closeBtn} onPress={() => setShowEpisodesModal(false)}>
-                <Text style={styles.closeBtnText}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.modalBody}>
-              {episodesLoading && episodes.length === 0 ? (
-                <ActivityIndicator color="#fff" size="large" />
-              ) : episodes.length === 0 ? (
-                <Text style={styles.text}>Nessun episodio disponibile.</Text>
-              ) : (
-                <ScrollView contentContainerStyle={styles.modalList}>
-                  {episodes.map((ep, idx) => (
-                    <TouchableOpacity
-                      key={`${anime.mal_id}-ep-${ep.mal_id || idx}`}
-                      style={styles.episodeItem}
-                      onPress={() => {
-                        const num = ep?.mal_id ?? ep?.number ?? (idx + 1);
-                        const urlFromCatalog = findUrlInCatalog(anime, num);
-                        const videoUrl = urlFromCatalog || ep?.url || playable.url;
-                        const epTitle = ep?.title || `Episodio ${num}`;
-                        navigation.navigate('Player', {
-                          videoUrl,
-                          type: 'video',
-                          title: `${anime.title} - ${epTitle}`,
-                          posterUrl: imageUrl,
-                          animeId: anime.mal_id,
-                        });
-                      }}
-                    >
-                      <View style={styles.episodeLeft}>
-                        <Text style={styles.episodeNumber}>{ep?.mal_id ? `#${ep.mal_id}` : `Ep ${idx + 1}`}</Text>
-                      </View>
-                      <View style={styles.episodeRight}>
-                        <Text style={styles.episodeTitle} numberOfLines={1}>
-                          {ep?.title || `Episodio ${ep?.mal_id || (idx + 1)}`}
-                        </Text>
-                        {!!ep?.aired && (
-                          <Text style={styles.episodeMeta}>
-                            {new Date(ep.aired).toLocaleDateString()}
-                          </Text>
-                        )}
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-
-                  {episodesHasNextPage && (
-                    <TouchableOpacity
-                      style={styles.loadMoreBtn}
-                      onPress={() => fetchEpisodes(episodesPage + 1)}
-                    >
-                      <Text style={styles.loadMoreText}>
-                        {episodesLoading ? 'Carico...' : 'Carica altri'}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                </ScrollView>
-              )}
-            </View>
+          <View style={styles.heroChips}>
+            {(anime.genres || []).slice(0, 3).map((g) => (
+              <View key={`genre-${g?.name}`} style={styles.chip}>
+                <Text style={styles.chipText}>{g?.name}</Text>
+              </View>
+            ))}
           </View>
         </View>
-      </Modal>
+      </View>
+
+      {/* Descrizione */}
+      <View style={styles.section}>
+        <Text style={styles.sectionLabel}>Descrizione</Text>
+        <Text style={styles.text} numberOfLines={descExpanded ? undefined : 6}>
+          {cleanSynopsis}
+        </Text>
+        {isLongSynopsis && (
+          <TouchableOpacity style={styles.readMoreBtn} onPress={() => setDescExpanded(!descExpanded)}>
+            <Text style={styles.readMoreText}>
+              {descExpanded ? 'Mostra meno' : 'Leggi di più'}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Episodi sempre visibili (inline) */}
+      <Text style={styles.sectionLabel}>Episodi</Text>
+      {episodesLoading && episodes.length === 0 ? (
+        <ActivityIndicator color="#fff" size="large" />
+      ) : episodes.length === 0 ? (
+        <Text style={styles.text}>Nessun episodio disponibile.</Text>
+      ) : (
+        <View style={styles.episodesList}>
+          {episodes.map((ep, idx) => (
+            <TouchableOpacity
+              key={`${anime.mal_id}-ep-${ep.mal_id || idx}`}
+              style={styles.episodeItem}
+              onPress={() => {
+                const num = ep?.mal_id ?? ep?.number ?? (idx + 1);
+                const urlFromCatalog = findUrlInCatalog(anime, num);
+                const videoUrl = urlFromCatalog || ep?.url || playable.url;
+                const epTitle = ep?.title || `Episodio ${num}`;
+                navigation.navigate('Player', {
+                  videoUrl,
+                  type: 'video',
+                  title: `${anime.title} - ${epTitle}`,
+                  posterUrl: imageUrl,
+                  animeId: anime.mal_id,
+                });
+              }}
+            >
+              <View style={styles.episodeLeft}>
+                <Text style={styles.episodeNumber}>{ep?.mal_id ? `#${ep.mal_id}` : `Ep ${idx + 1}`}</Text>
+              </View>
+              <View style={styles.episodeRight}>
+                <Text style={styles.episodeTitle} numberOfLines={1}>
+                  {ep?.title || `Episodio ${ep?.mal_id || (idx + 1)}`}
+                </Text>
+                {!!ep?.aired && (
+                  <Text style={styles.episodeMeta}>
+                    {new Date(ep.aired).toLocaleDateString()}
+                  </Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))}
+
+          {episodesHasNextPage && (
+            <TouchableOpacity
+              style={styles.loadMoreBtn}
+              onPress={() => fetchEpisodes(episodesPage + 1)}
+            >
+              <Text style={styles.loadMoreText}>
+                {episodesLoading ? 'Carico...' : 'Carica altri'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      )}
+
+      {/* RIMOSSO: Modal episodi */}
+      {/* <Modal visible={showEpisodesModal} ...> ... </Modal> */}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111', paddingHorizontal: 10 },
-  image: { width: '100%', height: 400, borderRadius: 12 },
-  title: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginTop: 4, marginBottom: 6 },
-  playButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#ff5722',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginBottom: 8
-  },
-  playButtonText: { color: '#fff', fontWeight: 'bold' },
 
+  // Hero moderno
+  hero: { height: 300, borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
+  heroImage: { width: '100%', height: '100%' },
+  heroOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
+  heroContent: { position: 'absolute', left: 12, right: 12, bottom: 12 },
+  heroTitle: { color: '#fff', fontSize: 26, fontWeight: 'bold' },
+  heroMeta: { color: '#ddd', fontSize: 12, marginTop: 4 },
+  heroChips: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  chip: { backgroundColor: 'rgba(255,255,255,0.15)', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginRight: 6, marginBottom: 6 },
+  chipText: { color: '#fff', fontSize: 12 },
+  heroActions: { flexDirection: 'row', marginTop: 10 },
+
+  // CTA uniformi con HomeScreen
+  ctaPrimary: { backgroundColor: '#ff5722', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8, marginRight: 10 },
+  ctaPrimaryText: { color: '#fff', fontWeight: 'bold' },
+  ctaSecondary: { backgroundColor: 'rgba(255,255,255,0.15)', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8 },
+  ctaSecondaryText: { color: '#fff' },
+
+  // Sezioni
+  section: { marginBottom: 16, paddingHorizontal: 2 },
   sectionLabel: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginTop: 4, marginBottom: 6 },
   text: { color: '#ccc', fontSize: 16, lineHeight: 22 },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  toggleBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#222' },
+  toggleText: { color: '#fff' },
 
-  actionsRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.65)', justifyContent: 'center', padding: 16 },
-  modalContent: { backgroundColor: '#1a1a1a', borderRadius: 12, overflow: 'hidden', maxHeight: '80%' },
-  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#333' },
-  modalTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  closeBtn: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, backgroundColor: '#333' },
-  closeBtnText: { color: '#fff', fontSize: 16 },
-  modalBody: { paddingHorizontal: 10, paddingVertical: 10 },
-  modalList: { paddingBottom: 10 },
-
+  // Episodi
   episodesList: { marginBottom: 12 },
   episodeItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, backgroundColor: '#222', borderRadius: 8, marginBottom: 6 },
   episodeLeft: { width: 60, alignItems: 'center', justifyContent: 'center' },
@@ -299,6 +307,15 @@ const styles = StyleSheet.create({
   episodeTitle: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
   episodeMeta: { color: '#aaa', fontSize: 12, marginTop: 2 },
   loadMoreBtn: { alignSelf: 'center', backgroundColor: '#333', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 8, marginTop: 6 },
-  loadMoreText: { color: '#fff' }
+  loadMoreText: { color: '#fff' },
+  readMoreBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#222',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginTop: 8
+  },
+  readMoreText: { color: '#fff' },
 });
 
