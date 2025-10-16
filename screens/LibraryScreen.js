@@ -10,7 +10,10 @@ export default function LibraryScreen({ navigation }) {
   const [items, setItems] = useState([]);
   const insets = useSafeAreaInsets();
   const NUM_COLS = 2;
-
+  // Stabilizza altezza riga e previeni doppie richieste di paging
+  const ROW_HEIGHT = 256;
+  const loadingMoreRef = React.useRef(false);
+  const pendingPageRef = React.useRef(null);
   const [showFilters, setShowFilters] = useState(false);
   const [selectedGenres, setSelectedGenres] = useState([]);
   const [selectedTypes, setSelectedTypes] = useState([]);
@@ -40,7 +43,12 @@ export default function LibraryScreen({ navigation }) {
     Music: 'music',
   };
 
-  // Elenco generi (nomi + mappa id) da API
+  const DEFAULT_GENRES = [
+    'Action','Adventure','Comedy','Drama','Fantasy','Horror','Mystery','Romance',
+    'Sci-Fi','Slice of Life','Sports','Supernatural','Ecchi','Mecha','Music',
+    'Psychological','Thriller'
+  ];
+
   const [genreIdByName, setGenreIdByName] = useState({});
   useEffect(() => {
     let cancelled = false;
@@ -56,11 +64,16 @@ export default function LibraryScreen({ navigation }) {
           if (g?.name && g?.mal_id != null) mapping[g.name] = g.mal_id;
         });
         if (!cancelled) {
-          setAllGenres(names);
+          // Se l'API non ritorna nulla, usa i generi di default
+          setAllGenres(names.length > 0 ? names : DEFAULT_GENRES);
           setGenreIdByName(mapping);
         }
       } catch (e) {
         console.warn(e);
+        if (!cancelled) {
+          // Fallback: mantieni eventuali generi già presenti, altrimenti usa default
+          setAllGenres(prev => (prev.length > 0 ? prev : DEFAULT_GENRES));
+        }
       }
     };
     fetchGenres();
@@ -286,48 +299,58 @@ export default function LibraryScreen({ navigation }) {
       setMode('search');
       setLoading(true);
 
+      const statusQueries = (selectedStatuses || [])
+        .map(normalizeStatus)
+        .map((key) => STATUS_QUERY_MAP[key])
+        .filter(Boolean);
+
       const typeQueries = (selectedTypes || [])
         .map((t) => TYPE_QUERY_MAP[t])
         .filter(Boolean);
 
-      if (typeQueries.length === 0) {
-        const res = await fetch(
-          `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`
-        );
-        const json = await res.json();
-        const data = (json?.data || []).map((item, index) => ({
-          ...item,
-          uniqueId: `search-${item.mal_id || 'unknown'}-${pageArg}-${index}`,
-        }));
-        setHasNextPage(!!json?.pagination?.has_next_page);
-        setItems((prev) => (pageArg === 1 ? data : [...prev, ...data]));
-        setPage(pageArg);
-      } else {
-        const base = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`;
-        const urls = typeQueries.map((t) => `${base}&type=${t}`);
+      const genreIds = (selectedGenres || [])
+        .map((g) => genreIdByName[g])
+        .filter((id) => typeof id === 'number');
 
-        const responses = await Promise.all(
-          urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
-        );
+      const base = `https://api.jikan.moe/v4/anime?q=${encodeURIComponent(q)}&sfw=true&limit=24&page=${pageArg}`;
+      const statusList = statusQueries.length > 0 ? statusQueries : [null];
+      const typeList = typeQueries.length > 0 ? typeQueries : [null];
+      const genreList = genreIds.length > 0 ? genreIds : [null];
 
-        const merged = [];
-        const seen = new Set();
-        responses.forEach((j, i) => {
-          (j?.data || []).forEach((item, idx) => {
-            if (seen.has(item.mal_id)) return;
-            seen.add(item.mal_id);
-            merged.push({
-              ...item,
-              uniqueId: `search-${item.mal_id || 'unknown'}-type-${i}-${pageArg}-${idx}`,
-            });
+      const urls = [];
+      statusList.forEach((st) => {
+        typeList.forEach((tp) => {
+          genreList.forEach((gn) => {
+            let url = base;
+            if (st) url += `&status=${st}`;
+            if (tp) url += `&type=${tp}`;
+            if (gn != null) url += `&genres=${gn}`;
+            urls.push(url);
           });
         });
+      });
 
-        const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
-        setHasNextPage(anyHasNext);
-        setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
-        setPage(pageArg);
-      }
+      const responses = await Promise.all(
+        urls.map((u) => fetch(u).then((r) => r.json()).catch(() => ({ data: [], pagination: {} })))
+      );
+
+      const merged = [];
+      const seen = new Set();
+      responses.forEach((j, i) => {
+        (j?.data || []).forEach((item, idx) => {
+          if (seen.has(item.mal_id)) return;
+          seen.add(item.mal_id);
+          merged.push({
+            ...item,
+            uniqueId: `search-${item.mal_id || 'unknown'}-flt-${i}-${pageArg}-${idx}`,
+          });
+        });
+      });
+
+      const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
+      setHasNextPage(anyHasNext);
+      setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
+      setPage(pageArg);
     } catch (e) {
       console.warn(e);
     } finally {
@@ -416,18 +439,30 @@ export default function LibraryScreen({ navigation }) {
   // Estendi loadMore per la modalità 'filtered'
   const loadMore = () => {
     if (loading || !hasNextPage) return;
+    if (loadingMoreRef.current) return;
     const nextPage = page + 1;
+    if (pendingPageRef.current === nextPage) return;
+
+    loadingMoreRef.current = true;
+    pendingPageRef.current = nextPage;
+
+    let p;
     if (mode === 'browse') {
-      fetchBrowse(nextPage);
+      p = fetchBrowse(nextPage);
     } else if (mode === 'filtered') {
-      fetchFiltered(nextPage);
+      p = fetchFiltered(nextPage);
     } else if (mode === 'status') {
-      fetchByStatuses(selectedStatuses, nextPage);
+      p = fetchByStatuses(selectedStatuses, nextPage);
     } else if (mode === 'type') {
-      fetchByTypes(selectedTypes, nextPage);
+      p = fetchByTypes(selectedTypes, nextPage);
     } else {
-      fetchSearchPage(query.trim(), nextPage);
+      p = fetchSearchPage(query.trim(), nextPage);
     }
+
+    Promise.resolve(p).finally(() => {
+      loadingMoreRef.current = false;
+      pendingPageRef.current = null;
+    });
   };
   const renderItem = React.useCallback(({ item }) => {
     const imageUrl =
@@ -470,18 +505,19 @@ export default function LibraryScreen({ navigation }) {
           <FlatList
             data={filteredItems}
             key={`grid-${NUM_COLS}`}
-            keyExtractor={(item) => item.uniqueId}
+            keyExtractor={(item, index) => item.uniqueId || `${item.mal_id || 'unknown'}-${index}`}
             renderItem={renderItem}
             numColumns={NUM_COLS}
-            columnWrapperStyle={{ justifyContent: 'space-between', paddingHorizontal: 12 }}
-            contentContainerStyle={[styles.list, { paddingBottom: 16 }]}
+            columnWrapperStyle={styles.columnWrapper}
+            contentContainerStyle={styles.listContainer}
             onEndReached={loadMore}
-            onEndReachedThreshold={0.4}
-            initialNumToRender={24}
-            maxToRenderPerBatch={24}
-            windowSize={5}
-            updateCellsBatchingPeriod={50}
-            removeClippedSubviews={true}
+            onEndReachedThreshold={0.2}
+            initialNumToRender={12}
+            maxToRenderPerBatch={12}
+            windowSize={9}
+            updateCellsBatchingPeriod={60}
+            removeClippedSubviews={false}
+            // getItemLayout rimosso: lo riaggiungiamo solo quando l'altezza è perfettamente stabile
             ListFooterComponent={
               loading && hasNextPage && page > 1 ? (
                 <View style={{ paddingVertical: 16 }}>
@@ -642,6 +678,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, backgroundColor: '#222', color: '#fff', borderRadius: 8, padding: 10, fontSize: 16 },
   searchButton: { marginLeft: 10, backgroundColor: '#ff5722', borderRadius: 8, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
   searchButtonText: { fontSize: 18 },
+  listContainer: { paddingBottom: 16, paddingHorizontal: 12 },
+  columnWrapper: { justifyContent: 'space-between', paddingHorizontal: 12 },
   list: { paddingBottom: 12, paddingHorizontal: 12 },
   card: { width: '48%', marginBottom: 12 },
   image: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#000' },
