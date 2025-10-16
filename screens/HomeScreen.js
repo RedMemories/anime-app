@@ -68,9 +68,10 @@ export default function HomeScreen({ navigation }) {
     const r = (item?.rating || '').toLowerCase();
     return r.startsWith('rx') || r.includes('r+');
   };
+  const filterSFW = (list) =>
+    (list || []).filter((item) => !isAdultRating(item) && !hasHentaiGenre(item));
   const filterAvoidChineseOnly = (list) =>
     (list || []).filter((item) => !isChineseAffiliation(item));
-  // Normalizzazione titoli e scoring di pertinenza
   const normalize = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim();
   const tokenize = (s) => normalize(s).split(' ').filter(Boolean);
   const titleVariants = (item) => {
@@ -111,7 +112,7 @@ export default function HomeScreen({ navigation }) {
     fetch(endpoint)
       .then(res => res.json())
       .then(data => {
-        const filtered = filterAvoidChineseOnly(data.data || []);
+        const filtered = filterSFW(data.data || []);
         const animeWithUniqueIds = filtered.map((item, index) => ({
           ...item,
           uniqueId: `${item.mal_id || 'unknown'}-${loadingKey}-${index}`
@@ -147,7 +148,7 @@ export default function HomeScreen({ navigation }) {
     fetch(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(query)}&sfw=true`)
       .then(res => res.json())
       .then(data => {
-        const filtered = filterAvoidChineseOnly(data.data || []);
+        const filtered = filterSFW(data.data || []);
         const ranked = rankAndFilterByQuery(filtered, query);
         const resultsWithUniqueIds = ranked.map((item, index) => ({
           ...item,
