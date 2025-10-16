@@ -416,8 +416,21 @@ export default function LibraryScreen({ navigation }) {
       });
 
       const anyHasNext = responses.some((r) => !!r?.pagination?.has_next_page);
-      setHasNextPage(anyHasNext);
-      setItems((prev) => (pageArg === 1 ? merged : [...prev, ...merged]));
+      const allowNextByBatch = merged.length >= 24;
+      setHasNextPage(anyHasNext || allowNextByBatch);
+
+      setItems((prev) => {
+        const next = pageArg === 1 ? merged : [...prev, ...merged];
+        const out = [];
+        const ids = new Set();
+        for (const it of next) {
+          const id = it.uniqueId || `${it.mal_id || 'unknown'}-${out.length}`;
+          if (ids.has(id)) continue;
+          ids.add(id);
+          out.push(it);
+        }
+        return out;
+      });
       setPage(pageArg);
     } catch (e) {
       console.warn(e);
