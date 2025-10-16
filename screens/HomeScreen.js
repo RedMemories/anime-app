@@ -360,17 +360,13 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.title}>🔥 AnimStream</Text>
         </TouchableOpacity>
         <View style={styles.searchContainer}>
-          <TextInput
-            placeholder="Cerca un anime..."
-            placeholderTextColor="#aaa"
-            style={styles.input}
-            value={query}
-            onChangeText={setQuery}
-            onSubmitEditing={searchAnime}
-          />
-          <TouchableOpacity style={styles.searchButton} onPress={searchAnime}>
+          {/* Rimosso l'input di ricerca: lasciamo solo il bottone */}
+          {/* <TouchableOpacity
+            style={styles.searchButton}
+            onPress={() => navigation.navigate('LibraryTab')}
+          >
             <Text style={styles.searchButtonText}>🔍</Text>
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
 
