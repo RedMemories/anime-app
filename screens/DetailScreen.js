@@ -82,6 +82,7 @@ export default function DetailScreen({ route, navigation }) {
   // Estendo la normalizzazione per rimuovere '-aa' / '_aa' oltre ai marker ITA
   const stripKeyMarkers = (s) => (s || '')
     .replace(/(_sub_ita|_ita|-ita|-aa|_aa)/ig, '')
+    .replace(/(?:[-_]?a{3,})$/i, '')
     .replace(/(?:-a|_a)$/i, '');
   const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
 
