@@ -310,12 +310,12 @@ export default function DetailScreen({ route, navigation }) {
         <Text style={styles.text}>Nessun episodio disponibile.</Text>
       ) : (
         <View style={styles.episodesList}>
-          {episodes.map((ep, idx) => (
+          {episodes.slice().reverse().map((ep, idx) => (
             <TouchableOpacity
               key={`${anime.mal_id}-ep-${ep.mal_id || idx}`}
               style={styles.episodeItem}
               onPress={() => {
-                const num = ep?.number ?? (idx + 1);
+                const num = ep?.number ?? (episodes.length - idx);
                 const urlFromCatalog = findUrlInCatalog(anime, num);
                 const videoUrl = urlFromCatalog || ep?.url || playable.url;
                 const epTitle = ep?.title || `Episodio ${num}`;
@@ -329,11 +329,13 @@ export default function DetailScreen({ route, navigation }) {
               }}
             >
               <View style={styles.episodeLeft}>
-                <Text style={styles.episodeNumber}>{`Ep ${ep?.number ?? (idx + 1)}`}</Text>
+                <Text style={styles.episodeNumber}>
+                  {`Ep ${ep?.number ?? (episodes.length - idx)}`}
+                </Text>
               </View>
               <View style={styles.episodeRight}>
                 <Text style={styles.episodeTitle} numberOfLines={1}>
-                  {ep?.title || `Episodio ${ep?.number ?? (idx + 1)}`}
+                  {ep?.title || `Episodio ${ep?.number ?? (episodes.length - idx)}`}
                 </Text>
                 {!!ep?.aired && (
                   <Text style={styles.episodeMeta}>
