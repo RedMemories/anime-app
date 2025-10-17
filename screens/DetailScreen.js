@@ -153,28 +153,28 @@ export default function DetailScreen({ route, navigation }) {
       slug(animeObj?.title_english),
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
-  
+
     const matched = Object.entries(catalog).filter(([key]) => {
       const baseSlug = keyBaseSlug(key);
       return candidates.some((s) => baseSlug === s);
     });
     if (matched.length === 0) return null;
-  
+
     const dubKeys = matched.filter(([key]) => isDubKey(key));
     const subKeys = matched.filter(([key]) => isSubKey(key));
     const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
-  
+
     pool.sort((a, b) => {
       const aTitle = computeTitleMatchScore(a[0], candidates);
       const bTitle = computeTitleMatchScore(b[0], candidates);
       if (bTitle !== aTitle) return bTitle - aTitle;
       return 0;
     });
-  
+
     const [, entry] = pool[0];
     const ep = (entry.episodes || []).find(e => e.number === epNumber);
     if (!ep) return null;
-  
+
     if (preferDubbed) {
       return ep.mp4 || ep.hls || ep.directUrl || null;
     } else {
@@ -199,8 +199,40 @@ export default function DetailScreen({ route, navigation }) {
     }
   };
 
+  // Carica tutte le pagine Jikan in una volta
+  const fetchAllEpisodes = async () => {
+    if (!anime?.mal_id) return;
+    try {
+      setEpisodesLoading(true);
+      setEpisodes([]);
+      let page = 1;
+      let hasNext = true;
+      while (hasNext) {
+        const res = await fetch(`https://api.jikan.moe/v4/anime/${anime.mal_id}/episodes?page=${page}`);
+        if (res.status === 429) {
+          await new Promise(r => setTimeout(r, 1500));
+          continue;
+        }
+        const json = await res.json();
+        const epList = Array.isArray(json?.data) ? json.data : [];
+        setEpisodes(prev => (page === 1 ? epList : [...prev, ...epList]));
+        hasNext = !!json?.pagination?.has_next_page;
+        setEpisodesHasNextPage(hasNext);
+        setEpisodesPage(page);
+        page += 1;
+        await new Promise(r => setTimeout(r, 500));
+      }
+    } catch (e) {
+      console.error('Errore episodi Jikan', e);
+    } finally {
+      setEpisodesLoading(false);
+      setEpisodesHasNextPage(false); // disattiva il bottone "Carica altri"
+    }
+  };
+
   useEffect(() => {
-    fetchEpisodes(1);
+    // Carica tutto invece di solo la prima pagina
+    fetchAllEpisodes();
   }, [anime?.mal_id]);
 
 
@@ -239,35 +271,35 @@ export default function DetailScreen({ route, navigation }) {
 
   const getFallbackCatalogEpisodes = (animeObj) => {
     if (!catalog) return [];
-  
+
     const candidates = [
       slug(animeObj?.title),
       slug(animeObj?.title_english),
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
-  
+
     const matched = Object.entries(catalog).filter(([key]) => {
       const baseSlug = keyBaseSlug(key);
       return candidates.some(s => baseSlug === s);
     });
     if (matched.length === 0) return [];
-  
+
     // Filtra usando i marker
     const dubKeys = matched.filter(([key]) => isDubKey(key));
     const subKeys = matched.filter(([key]) => isSubKey(key));
     const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
-  
+
     pool.sort((a, b) => {
       const aTitle = computeTitleMatchScore(a[0], candidates);
       const bTitle = computeTitleMatchScore(b[0], candidates);
       return bTitle - aTitle;
     });
-  
+
     const [, entry] = pool[0] || [];
     const eps = Array.isArray(entry?.episodes) ? entry.episodes : [];
     const pickUrl = (ep) =>
       preferDubbed ? (ep.mp4 || ep.hls || ep.directUrl || null) : (ep.hls || ep.mp4 || ep.directUrl || null);
-  
+
     return eps
       .map((ep, idx) => ({
         number: typeof ep.number === 'number' ? ep.number : (idx + 1),
@@ -345,8 +377,12 @@ export default function DetailScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* Elenco episodi */}
+      {episodesLoading && (
+        <View style={styles.loadingRow}>
+          <ActivityIndicator color="#fff" size="small" />
+          <Text style={styles.loadingText}>Carico tutti gli episodi...</Text>
+        </View>
+      )}
       {episodesLoading && episodes.length === 0 ? (
         <ActivityIndicator color="#fff" size="large" />
       ) : episodes.length === 0 ? (
@@ -444,6 +480,9 @@ export default function DetailScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111', paddingHorizontal: 10 },
+
+  loadingRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 2, marginBottom: 8 },
+  loadingText: { color: '#fff' },
 
   hero: { height: 300, borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
   heroImage: { width: '100%', height: '100%' },
