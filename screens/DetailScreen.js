@@ -5,7 +5,6 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 export default function DetailScreen({ route, navigation }) {
   const { anime } = route.params;
   const [showEpisodes, setShowEpisodes] = useState(false);
-  // RIMOSSO: const [showEpisodesModal, setShowEpisodesModal] = useState(false);
   const [episodes, setEpisodes] = useState([]);
   const [episodesPage, setEpisodesPage] = useState(1);
   const [episodesHasNextPage, setEpisodesHasNextPage] = useState(false);
@@ -42,45 +41,108 @@ export default function DetailScreen({ route, navigation }) {
     loadCatalog();
   }, []);
 
-  const PREFERRED_AUDIO_LANG = 'ita';
-  const PREFER_DUBBED = true;
+  const [preferredAudioLang, setPreferredAudioLang] = useState('ita');
+  const [preferDubbed, setPreferDubbed] = useState(false);
+  const [hasDubIta, setHasDubIta] = useState(false);
 
+  useEffect(() => {
+    if (!catalog || !anime) {
+      setHasDubIta(false);
+      return;
+    }
+    const candidates = [
+      slug(anime?.title),
+      slug(anime?.title_english),
+      slug(anime?.title_japanese),
+    ].filter(Boolean);
+
+    const matched = Object.entries(catalog).filter(([key]) => {
+      const keySlug = slug(key);
+      return candidates.some(s =>
+        keySlug === s ||
+        keySlug.startsWith(s) ||
+        s.startsWith(keySlug) ||
+        keySlug.includes(s) ||
+        s.includes(keySlug)
+      );
+    });
+
+    const hasDub = matched.some(([key]) => key.toLowerCase().includes('-ita'));
+    setHasDubIta(hasDub);
+    if (!hasDub) setPreferDubbed(false);
+  }, [catalog, anime]);
   const slug = (s) => (s || '').toLowerCase().replace(/[\W_]+/g, '');
 
+  const hasSubItaMarker = (s) => {
+      const v = (s || '').toLowerCase();
+      const hasSubWord = v.includes('sub') || v.includes('hardsub');
+      const hasIta = v.includes('ita');
+      const patterns = ['_SUB_ITA'];
+      const direct = patterns.some((p) => v.includes(p));
+      return (hasSubWord && hasIta) || direct;
+  };
+  
   const detectVersion = (s) => {
-    const v = (s || '').toLowerCase();
-    const isSubbed = v.includes('sub') || v.includes('hardsub');
-    const isDubbed = !isSubbed && (v.includes('dub') || v.includes('doppi') || (v.includes('ita') && !isSubbed));
-    let audioLang = null;
-    if (isDubbed) {
-      if (v.includes('ita')) audioLang = 'ita';
-      else if (v.includes('eng')) audioLang = 'eng';
-      else if (v.includes('jpn') || v.includes('jp')) audioLang = 'ja';
-    }
-    const subLangs = [];
-    if (isSubbed) {
-      if (v.includes('ita')) subLangs.push('ita');
-      if (v.includes('eng')) subLangs.push('eng');
-    }
-    return { isDubbed, isSubbed, audioLang, subLangs };
+      const v = (s || '').toLowerCase();
+      const hasIta = v.includes('ita');
+      const isSubbed = hasSubItaMarker(v);
+      const dubHints = v.includes('dub') || v.includes('doppi') || v.includes('doppiat') || v.includes('-ita');
+      const isDubbed = !isSubbed && (dubHints || (hasIta && !isSubbed));
+  
+      let audioLang = null;
+      if (isDubbed) {
+          if (hasIta) audioLang = 'ita';
+          else if (v.includes('eng')) audioLang = 'eng';
+          else if (v.includes('jpn') || v.includes('jp')) audioLang = 'ja';
+      }
+  
+      const subLangs = [];
+      if (isSubbed) {
+          if (hasIta) subLangs.push('ita');
+          if (v.includes('eng')) subLangs.push('eng');
+      }
+  
+      return { isDubbed, isSubbed, audioLang, subLangs };
   };
 
   const scoreVersion = (version) => {
     let score = 0;
-    if (PREFER_DUBBED) {
+    if (preferDubbed) {
       if (version.isDubbed) score += 10;
-      if (version.isSubbed) score -= 2;
+      if (version.isSubbed) score -= 3;
+      if (preferredAudioLang && version.audioLang === preferredAudioLang) score += 4;
+      if (preferredAudioLang && version.subLangs?.includes(preferredAudioLang)) score += 1;
     } else {
-      if (version.isSubbed) score += 5;
-      if (version.isDubbed) score -= 1;
+      if (version.isSubbed) score += 10;
+      if (version.isDubbed) score -= 2;
+      if (preferredAudioLang && version.subLangs?.includes(preferredAudioLang)) score += 4;
     }
-    if (PREFERRED_AUDIO_LANG && version.audioLang === PREFERRED_AUDIO_LANG) score += 3;
-    if (PREFERRED_AUDIO_LANG && version.subLangs?.includes(PREFERRED_AUDIO_LANG)) score += 2;
     return score;
   };
 
   const scoreKey = (key) => scoreVersion(detectVersion(key));
   const scoreUrl = (url) => scoreVersion(detectVersion(url));
+
+  const computeTitleMatchScore = (key, candidates) => {
+    const ks = slug(key);
+    let best = 0;
+    let bestDiff = 9999;
+    candidates.forEach((c) => {
+      const cs = slug(c);
+      let s = 0;
+      if (ks === cs) s = 3;                          
+      else if (ks.startsWith(cs) || cs.startsWith(ks)) s = 2; 
+      else if (ks.includes(cs) || cs.includes(ks)) s = 1;     
+      const diff = Math.abs(ks.length - cs.length);
+      if (s > best) {
+        best = s;
+        bestDiff = diff;
+      } else if (s === best) {
+        bestDiff = Math.min(bestDiff, diff);
+      }
+    });
+    return best * 10 - Math.min(bestDiff, 9);
+  };
 
   const findUrlInCatalog = (animeObj, epNumber) => {
     if (!catalog) return null;
@@ -90,26 +152,32 @@ export default function DetailScreen({ route, navigation }) {
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
 
-    // Trova tutte le chiavi compatibili
     const matched = Object.entries(catalog).filter(([key]) => {
       const keySlug = slug(key);
       return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
     });
     if (matched.length === 0) return null;
 
-    // Ordina le chiavi in base alla preferenza (doppiato ITA > sub ITA > altro)
-    matched.sort((a, b) => scoreKey(b[0]) - scoreKey(a[0]));
-    const [, entry] = matched[0];
+    const dubKeys = matched.filter(([key]) => key.toLowerCase().includes('-ita'));
+    const subKeys = matched.filter(([key]) => !key.toLowerCase().includes('-ita'));
+    const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
 
-    // Cerca l’episodio
+    pool.sort((a, b) => {
+      const aTitle = computeTitleMatchScore(a[0], candidates);
+      const bTitle = computeTitleMatchScore(b[0], candidates);
+      if (bTitle !== aTitle) return bTitle - aTitle;
+      return 0; 
+    });
+
+    const [, entry] = pool[0];
     const ep = (entry.episodes || []).find(e => e.number === epNumber);
     if (!ep) return null;
 
-    // Seleziona la migliore tra hls/mp4/directUrl
-    const sources = [ep.hls, ep.mp4, ep.directUrl].filter(Boolean);
-    if (sources.length === 0) return null;
-    sources.sort((u1, u2) => scoreUrl(u2) - scoreUrl(u1));
-    return sources[0];
+    if (preferDubbed) {
+      return ep.mp4 || ep.hls || ep.directUrl || null;
+    } else {
+      return ep.hls || ep.mp4 || ep.directUrl || null;
+    }
   };
 
   const fetchEpisodes = async (page = 1) => {
@@ -208,8 +276,34 @@ export default function DetailScreen({ route, navigation }) {
         )}
       </View>
 
-      {/* Episodi sempre visibili (inline) */}
-      <Text style={styles.sectionLabel}>Episodi</Text>
+      {/* Header Episodi con toggle SUB/DUB ITA (DUB nascosto se non disponibile) */}
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionLabel}>Episodi</Text>
+        <View style={styles.toggleGroup}>
+          {hasDubIta && (
+            <TouchableOpacity
+              style={[styles.toggleBtn, preferDubbed ? styles.toggleBtnActive : styles.toggleBtnInactive]}
+              onPress={() => {
+                setPreferDubbed(true);
+                setPreferredAudioLang('ita');
+              }}
+            >
+              <Text style={[styles.toggleText, preferDubbed && styles.toggleTextActive]}>DUB ITA</Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            style={[styles.toggleBtn, !preferDubbed ? styles.toggleBtnActive : styles.toggleBtnInactive]}
+            onPress={() => {
+              setPreferDubbed(false);
+              setPreferredAudioLang('ita');
+            }}
+          >
+            <Text style={[styles.toggleText, !preferDubbed && styles.toggleTextActive]}>SUB ITA</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Elenco episodi */}
       {episodesLoading && episodes.length === 0 ? (
         <ActivityIndicator color="#fff" size="large" />
       ) : episodes.length === 0 ? (
@@ -221,7 +315,7 @@ export default function DetailScreen({ route, navigation }) {
               key={`${anime.mal_id}-ep-${ep.mal_id || idx}`}
               style={styles.episodeItem}
               onPress={() => {
-                const num = ep?.mal_id ?? ep?.number ?? (idx + 1);
+                const num = ep?.number ?? (idx + 1);
                 const urlFromCatalog = findUrlInCatalog(anime, num);
                 const videoUrl = urlFromCatalog || ep?.url || playable.url;
                 const epTitle = ep?.title || `Episodio ${num}`;
@@ -235,11 +329,11 @@ export default function DetailScreen({ route, navigation }) {
               }}
             >
               <View style={styles.episodeLeft}>
-                <Text style={styles.episodeNumber}>{ep?.mal_id ? `#${ep.mal_id}` : `Ep ${idx + 1}`}</Text>
+                <Text style={styles.episodeNumber}>{`Ep ${ep?.number ?? (idx + 1)}`}</Text>
               </View>
               <View style={styles.episodeRight}>
                 <Text style={styles.episodeTitle} numberOfLines={1}>
-                  {ep?.title || `Episodio ${ep?.mal_id || (idx + 1)}`}
+                  {ep?.title || `Episodio ${ep?.number ?? (idx + 1)}`}
                 </Text>
                 {!!ep?.aired && (
                   <Text style={styles.episodeMeta}>
@@ -262,9 +356,6 @@ export default function DetailScreen({ route, navigation }) {
           )}
         </View>
       )}
-
-      {/* RIMOSSO: Modal episodi */}
-      {/* <Modal visible={showEpisodesModal} ...> ... </Modal> */}
     </ScrollView>
   );
 }
@@ -272,7 +363,6 @@ export default function DetailScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#111', paddingHorizontal: 10 },
 
-  // Hero moderno
   hero: { height: 300, borderRadius: 12, overflow: 'hidden', marginBottom: 12 },
   heroImage: { width: '100%', height: '100%' },
   heroOverlay: { position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.35)' },
@@ -295,7 +385,29 @@ const styles = StyleSheet.create({
   sectionLabel: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginTop: 4, marginBottom: 6 },
   text: { color: '#ccc', fontSize: 16, lineHeight: 22 },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  toggleBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, backgroundColor: '#222' },
+
+  // Toggle migliorato
+  toggleGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1a1a1a',
+    borderRadius: 10,
+    padding: 4,
+    gap: 6
+  },
+  toggleBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8
+  },
+  toggleBtnActive: {
+    backgroundColor: '#ff5722'
+  },
+  toggleBtnInactive: {
+    backgroundColor: 'rgba(255,255,255,0.12)'
+  },
+  toggleText: { color: '#fff' },
+  toggleTextActive: { fontWeight: 'bold' },
   toggleText: { color: '#fff' },
 
   // Episodi
