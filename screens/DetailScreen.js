@@ -73,8 +73,17 @@ export default function DetailScreen({ route, navigation }) {
     return (v.includes('_ita') || v.includes('-ita')) && !v.includes('_sub_ita');
   };
 
-  const stripKeyMarkers = (s) => (s || '').replace(/(_sub_ita|_ita|-ita)/ig, '');
+  // Aggiunto: marker SUB per detectVersion e fallback
+  const hasSubItaMarker = (s) => {
+    const v = (s || '').toLowerCase();
+    return v.includes('_sub_ita') || /\bsub\b/.test(v) || /\bsottotitol\w*\b/.test(v);
+  };
+
+  // Estendo la normalizzazione per rimuovere '-aa' / '_aa' oltre ai marker ITA
+  const stripKeyMarkers = (s) => (s || '')
+    .replace(/(_sub_ita|_ita|-ita|-aa|_aa)/ig, '');
   const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
+
   const detectVersion = (s) => {
     const v = (s || '').toLowerCase();
     const hasIta = v.includes('ita');
