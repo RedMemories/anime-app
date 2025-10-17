@@ -326,7 +326,8 @@ export default function DetailScreen({ route, navigation }) {
                   posterUrl: imageUrl,
                   animeId: anime.mal_id,
                 });
-              }}
+                navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+            }}
             >
               <View style={styles.episodeLeft}>
                 <Text style={styles.episodeNumber}>

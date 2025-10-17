@@ -9,14 +9,14 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function PlayerScreen({ route, navigation }) {
     const { videoUrl, source: sourceParam, title, posterUrl, animeId } = route?.params || {};
-  
+
     const playbackUrlString = useMemo(() => {
         if (typeof sourceParam === 'string' && sourceParam.trim()) return sourceParam.trim();
         if (sourceParam && typeof sourceParam === 'object' && typeof sourceParam.uri === 'string' && sourceParam.uri.trim()) return sourceParam.uri.trim();
         if (typeof videoUrl === 'string' && videoUrl.trim()) return videoUrl.trim();
         return 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
     }, [sourceParam, videoUrl]);
-  
+
     const player = useVideoPlayer(
         playbackUrlString,
         (p) => {
@@ -43,7 +43,7 @@ export default function PlayerScreen({ route, navigation }) {
                 const saved = raw ? JSON.parse(raw) : null;
                 const pos = Math.max(0, Number(saved?.position || 0));
                 resumeTargetRef.current = pos;
-            } catch {}
+            } catch { }
         })();
     }, [progressKey]);
 
@@ -56,7 +56,7 @@ export default function PlayerScreen({ route, navigation }) {
             try {
                 player.currentTime = target;
                 resumedRef.current = true;
-            } catch {}
+            } catch { }
         }
     };
 
@@ -86,7 +86,7 @@ export default function PlayerScreen({ route, navigation }) {
                     list.unshift(entry);
                     await AsyncStorage.setItem('watchHistory', JSON.stringify(list.slice(0, 200)));
                 }
-            } catch {}
+            } catch { }
         };
         appendHistory();
     }, [playbackUrlString, title, posterUrl, animeId]);
@@ -99,7 +99,7 @@ export default function PlayerScreen({ route, navigation }) {
         const now = Math.floor(currentTime || 0);
         if (now - (lastSavedRef.current || 0) >= 5) {
             lastSavedRef.current = now;
-            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => {});
+            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => { });
         }
     });
 
@@ -123,7 +123,7 @@ export default function PlayerScreen({ route, navigation }) {
                     current === ScreenOrientation.Orientation.LANDSCAPE_RIGHT;
                 setIsFullscreen(landscape);
                 StatusBar.setHidden(true, 'fade');
-            } catch {}
+            } catch { }
         })();
 
         sub = ScreenOrientation.addOrientationChangeListener(({ orientationInfo }) => {
@@ -150,9 +150,9 @@ export default function PlayerScreen({ route, navigation }) {
             } else {
                 await ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP);
             }
-        } catch {}
+        } catch { }
     };
-    
+
     useEventListener(player, 'timeUpdate', ({ currentTime }) => {
         setPosition(currentTime ?? 0);
         const d = player.duration;
@@ -160,7 +160,7 @@ export default function PlayerScreen({ route, navigation }) {
         const now = Math.floor(currentTime || 0);
         if (now - lastSavedRef.current >= 5) {
             lastSavedRef.current = now;
-            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => {});
+            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => { });
         }
     });
     useEventListener(player, 'durationChange', ({ duration }) => {
@@ -220,6 +220,13 @@ export default function PlayerScreen({ route, navigation }) {
     const handleTap = () => {
         setShowOverlay((v) => !v);
     };
+    useEffect(() => {
+        const parent = navigation.getParent();
+        parent?.setOptions({ tabBarStyle: { display: 'none', backgroundColor: '#111' } });
+        return () => {
+            parent?.setOptions({ tabBarStyle: { display: 'flex', backgroundColor: '#111' } });
+        };
+    }, []);
 
     return (
         <View style={styles.container}>
@@ -327,119 +334,119 @@ export default function PlayerScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  videoTapper: { flex: 1 },
-  video: { width: '100%', height: '100%', backgroundColor: '#000' },
-  overlay: {
-    position: 'absolute',
-    top: 0, left: 0, right: 0, bottom: 0,
-    justifyContent: 'space-between',
-  },
-  topBar: {
-    marginTop: 8,
-    paddingHorizontal: 10,
-    height: 44,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  topBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  topTitle: {
-    marginLeft: 8,
-    flex: 1,
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  topRight: {
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  centerControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 28,
-  },
-  centerBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  playBtn: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  bottomBar: {
-    paddingHorizontal: 12,
-    paddingBottom: 14,
-    height: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  slider: {
-    flex: 1,
-    height: 28,
-    marginHorizontal: 10,
-  },
-  timeText: { color: '#fff', fontSize: 12, marginLeft: 12 },
-  bottomBtn: {
-    height: 32,
-    minWidth: 36,
-    borderRadius: 16,
-    paddingHorizontal: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.35)',
-  },
-  speedBtn: {
-    width: 36,            
-    height: 32,           
-    paddingHorizontal: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-  },
-  speedText: { 
-    color: '#fff', 
-    fontSize: 12, 
-    fontWeight: '600',
-    textAlign: 'center' 
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  modalCard: {
-    width: '86%',
-    borderRadius: 12,
-    backgroundColor: '#181818',
-    padding: 16,
-  },
-  modalTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8 },
-  modalSection: { marginTop: 10 },
-  modalLabel: { color: '#fff', fontSize: 13, opacity: 0.8, marginBottom: 6 },
-  speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  speedChoice: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.1)',
-  },
-  speedChoiceText: { color: '#fff', fontSize: 13 },
-  speedChoiceTextActive: { color: '#e50914', fontWeight: '700' },
+    container: { flex: 1, backgroundColor: '#000' },
+    videoTapper: { flex: 1 },
+    video: { width: '100%', height: '100%', backgroundColor: '#000' },
+    overlay: {
+        position: 'absolute',
+        top: 0, left: 0, right: 0, bottom: 0,
+        justifyContent: 'space-between',
+    },
+    topBar: {
+        marginTop: 8,
+        paddingHorizontal: 10,
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    topBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.35)',
+    },
+    topTitle: {
+        marginLeft: 8,
+        flex: 1,
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    topRight: {
+        flexDirection: 'row',
+        gap: 8,
+        alignItems: 'center',
+    },
+    centerControls: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 28,
+    },
+    centerBtn: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.35)',
+    },
+    playBtn: {
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    bottomBar: {
+        paddingHorizontal: 12,
+        paddingBottom: 14,
+        height: 64,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    slider: {
+        flex: 1,
+        height: 28,
+        marginHorizontal: 10,
+    },
+    timeText: { color: '#fff', fontSize: 12, marginLeft: 12 },
+    bottomBtn: {
+        height: 32,
+        minWidth: 36,
+        borderRadius: 16,
+        paddingHorizontal: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.35)',
+    },
+    speedBtn: {
+        width: 36,
+        height: 32,
+        paddingHorizontal: 0,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+    },
+    speedText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: '600',
+        textAlign: 'center'
+    },
+    modalBackdrop: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    modalCard: {
+        width: '86%',
+        borderRadius: 12,
+        backgroundColor: '#181818',
+        padding: 16,
+    },
+    modalTitle: { color: '#fff', fontSize: 16, fontWeight: '700', marginBottom: 8 },
+    modalSection: { marginTop: 10 },
+    modalLabel: { color: '#fff', fontSize: 13, opacity: 0.8, marginBottom: 6 },
+    speedRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+    speedChoice: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.1)',
+    },
+    speedChoiceText: { color: '#fff', fontSize: 13 },
+    speedChoiceTextActive: { color: '#e50914', fontWeight: '700' },
 });

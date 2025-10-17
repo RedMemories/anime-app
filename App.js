@@ -51,12 +51,15 @@ export default function App() {
   return (
     <NavigationContainer>
       <Tab.Navigator
-        screenOptions={{
+        screenOptions={({ route }) => ({
           headerShown: false,
-          tabBarStyle: { backgroundColor: '#111' },
+          tabBarStyle: {
+            backgroundColor: '#111',
+            display: route?.state?.routes?.[route.state.index]?.name === 'Player' ? 'none' : 'flex',
+          },
           tabBarActiveTintColor: '#ff5722',
           tabBarInactiveTintColor: '#aaa',
-        }}
+        })}
       >
         <Tab.Screen
           name="HomeTab"
