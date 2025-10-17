@@ -498,7 +498,6 @@ const styles = StyleSheet.create({
     },
     speedChoiceText: { color: '#fff', fontSize: 13 },
     speedChoiceTextActive: { color: '#e50914', fontWeight: '700' },
-    // Wrapper e overlay scrubbing
     sliderWrap: {
     flex: 1,
     height: 28,
