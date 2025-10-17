@@ -111,6 +111,9 @@ export default function PlayerScreen({ route, navigation }) {
     const [showOverlay, setShowOverlay] = useState(true);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isScrubbing, setIsScrubbing] = useState(false);
+    const [scrubTarget, setScrubTarget] = useState(0);
+    const [sliderWidth, setSliderWidth] = useState(0);
 
     useEffect(() => {
         let sub;
@@ -285,21 +288,67 @@ export default function PlayerScreen({ route, navigation }) {
                             {formatTime(position)} / {formatTime(duration)}
                         </Text>
 
-                        <Slider
-                            style={styles.slider}
-                            minimumValue={0}
-                            maximumValue={duration || 1}
-                            value={position}
-                            step={1}
-                            onSlidingStart={() => setShowOverlay(true)}
-                            onSlidingComplete={(sec) => {
-                                const d = duration || player.duration || 0;
-                                player.currentTime = Math.max(0, Math.min(d, sec));
-                            }}
-                            minimumTrackTintColor="#e50914"
-                            maximumTrackTintColor="rgba(255,255,255,0.3)"
-                            thumbTintColor="#e50914"
-                        />
+                        {/* Wrapper slider per misurare larghezza e mostrare la bolla */}
+                        <View
+                            style={styles.sliderWrap}
+                            onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
+                        >
+                            {/* Marcatore verticale durante lo scrubbing */}
+                            {isScrubbing && duration > 0 && (
+                                <View
+                                    style={[
+                                        styles.scrubMarker,
+                                        { left: Math.max(0, Math.min(sliderWidth, (scrubTarget / duration) * sliderWidth)) }
+                                    ]}
+                                />
+                            )}
+
+                            {/* Bolla con orario di destinazione */}
+                            {isScrubbing && duration > 0 && (
+                                <View
+                                    style={[
+                                        styles.scrubBubble,
+                                        {
+                                            left: Math.max(
+                                                0,
+                                                Math.min(
+                                                    sliderWidth - 48,
+                                                    (scrubTarget / duration) * sliderWidth - 24
+                                                )
+                                            )
+                                        }
+                                    ]}
+                                >
+                                    <Text style={styles.scrubBubbleText}>{formatTime(scrubTarget)}</Text>
+                                </View>
+                            )}
+
+                            <Slider
+                                style={styles.slider}
+                                minimumValue={0}
+                                maximumValue={duration || 1}
+                                value={position}
+                                step={1}
+                                onSlidingStart={() => {
+                                    setShowOverlay(true);
+                                    setIsScrubbing(true);
+                                }}
+                                onValueChange={(sec) => {
+                                    setShowOverlay(true);
+                                    setIsScrubbing(true);
+                                    setScrubTarget(sec);
+                                }}
+                                onSlidingComplete={(sec) => {
+                                    const d = duration || player.duration || 0;
+                                    const target = Math.max(0, Math.min(d, sec));
+                                    player.currentTime = target;
+                                    setIsScrubbing(false);
+                                }}
+                                minimumTrackTintColor="#e50914"
+                                maximumTrackTintColor="rgba(255,255,255,0.3)"
+                                thumbTintColor="#e50914"
+                            />
+                        </View>
 
                         <TouchableOpacity onPress={() => setSettingsOpen(true)} style={[styles.bottomBtn, styles.speedBtn]}>
                             <Text style={styles.speedText}>{`${rate}x`}</Text>
@@ -449,4 +498,28 @@ const styles = StyleSheet.create({
     },
     speedChoiceText: { color: '#fff', fontSize: 13 },
     speedChoiceTextActive: { color: '#e50914', fontWeight: '700' },
+    // Wrapper e overlay scrubbing
+    sliderWrap: {
+    flex: 1,
+    height: 28,
+    marginHorizontal: 10,
+    position: 'relative',
+    },
+    scrubBubble: {
+    position: 'absolute',
+    bottom: 34,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    },
+    scrubBubbleText: { color: '#fff', fontSize: 12, fontWeight: '600' },
+    scrubMarker: {
+    position: 'absolute',
+    bottom: 28,
+    width: 2,
+    height: 16,
+    backgroundColor: '#e50914',
+    borderRadius: 1,
+    },
 });
