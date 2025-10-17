@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "anime-app",
-    "slug": "anime-app",
-    "version": "1.0.0",
+    "name": "AnimStream",
+    "slug": "animstream",
+    "version": "1.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -17,8 +17,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/LogoAnimStream.png",
+        "backgroundColor": "#111111"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.animeapp"

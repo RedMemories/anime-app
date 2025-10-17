@@ -81,7 +81,8 @@ export default function DetailScreen({ route, navigation }) {
 
   // Estendo la normalizzazione per rimuovere '-aa' / '_aa' oltre ai marker ITA
   const stripKeyMarkers = (s) => (s || '')
-    .replace(/(_sub_ita|_ita|-ita|-aa|_aa)/ig, '');
+    .replace(/(_sub_ita|_ita|-ita|-aa|_aa)/ig, '')
+    .replace(/(?:-a|_a)$/i, '');
   const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
 
   const detectVersion = (s) => {
@@ -172,7 +173,11 @@ export default function DetailScreen({ route, navigation }) {
     });
 
     const [, entry] = pool[0];
-    const ep = (entry.episodes || []).find(e => e.number === epNumber);
+    let ep = (entry.episodes || []).find(e => e.number === epNumber) || null;
+    if (!ep) {
+      const idx = Math.max(0, Math.min(epNumber - 1, (entry.episodes || []).length - 1));
+      ep = (entry.episodes || [])[idx] || null;
+    }
     if (!ep) return null;
 
     if (preferDubbed) {
