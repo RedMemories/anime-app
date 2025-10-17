@@ -56,32 +56,25 @@ export default function DetailScreen({ route, navigation }) {
       slug(anime?.title_japanese),
     ].filter(Boolean);
 
-    const matched = Object.entries(catalog).filter(([key]) => {
-      const keySlug = slug(key);
-      return candidates.some(s =>
-        keySlug === s ||
-        keySlug.startsWith(s) ||
-        s.startsWith(keySlug) ||
-        keySlug.includes(s) ||
-        s.includes(keySlug)
-      );
+    const matchedStrict = Object.entries(catalog).filter(([key]) => {
+      const baseSlug = keyBaseSlug(key);
+      return candidates.some((s) => baseSlug === s);
     });
 
-    const hasDub = matched.some(([key]) => key.toLowerCase().includes('-ita'));
+    const hasDub = matchedStrict.some(([key]) => isDubKey(key));
     setHasDubIta(hasDub);
     if (!hasDub) setPreferDubbed(false);
   }, [catalog, anime]);
   const slug = (s) => (s || '').toLowerCase().replace(/[\W_]+/g, '');
 
-  const hasSubItaMarker = (s) => {
+  const isSubKey = (s) => ((s || '').toLowerCase().includes('_sub_ita'));
+  const isDubKey = (s) => {
     const v = (s || '').toLowerCase();
-    const hasSubWord = v.includes('sub') || v.includes('hardsub');
-    const hasIta = v.includes('ita');
-    const patterns = ['_SUB_ITA'];
-    const direct = patterns.some((p) => v.includes(p));
-    return (hasSubWord && hasIta) || direct;
+    return (v.includes('_ita') || v.includes('-ita')) && !v.includes('_sub_ita');
   };
 
+  const stripKeyMarkers = (s) => (s || '').replace(/(_sub_ita|_ita|-ita)/ig, '');
+  const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
   const detectVersion = (s) => {
     const v = (s || '').toLowerCase();
     const hasIta = v.includes('ita');
@@ -151,28 +144,28 @@ export default function DetailScreen({ route, navigation }) {
       slug(animeObj?.title_english),
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
-
+  
     const matched = Object.entries(catalog).filter(([key]) => {
-      const keySlug = slug(key);
-      return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
+      const baseSlug = keyBaseSlug(key);
+      return candidates.some((s) => baseSlug === s);
     });
     if (matched.length === 0) return null;
-
-    const dubKeys = matched.filter(([key]) => key.toLowerCase().includes('-ita'));
-    const subKeys = matched.filter(([key]) => !key.toLowerCase().includes('-ita'));
+  
+    const dubKeys = matched.filter(([key]) => isDubKey(key));
+    const subKeys = matched.filter(([key]) => isSubKey(key));
     const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
-
+  
     pool.sort((a, b) => {
       const aTitle = computeTitleMatchScore(a[0], candidates);
       const bTitle = computeTitleMatchScore(b[0], candidates);
       if (bTitle !== aTitle) return bTitle - aTitle;
       return 0;
     });
-
+  
     const [, entry] = pool[0];
     const ep = (entry.episodes || []).find(e => e.number === epNumber);
     if (!ep) return null;
-
+  
     if (preferDubbed) {
       return ep.mp4 || ep.hls || ep.directUrl || null;
     } else {
@@ -235,37 +228,37 @@ export default function DetailScreen({ route, navigation }) {
       .trim();
   };
 
-  // Fallback: ricava gli episodi direttamente dal catalogo se Jikan non ne restituisce
   const getFallbackCatalogEpisodes = (animeObj) => {
     if (!catalog) return [];
-
+  
     const candidates = [
       slug(animeObj?.title),
       slug(animeObj?.title_english),
       slug(animeObj?.title_japanese),
     ].filter(Boolean);
-
+  
     const matched = Object.entries(catalog).filter(([key]) => {
-      const keySlug = slug(key);
-      return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
+      const baseSlug = keyBaseSlug(key);
+      return candidates.some(s => baseSlug === s);
     });
     if (matched.length === 0) return [];
-
-    const dubKeys = matched.filter(([key]) => key.toLowerCase().includes('-ita'));
-    const subKeys = matched.filter(([key]) => !key.toLowerCase().includes('-ita'));
+  
+    // Filtra usando i marker
+    const dubKeys = matched.filter(([key]) => isDubKey(key));
+    const subKeys = matched.filter(([key]) => isSubKey(key));
     const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
-
+  
     pool.sort((a, b) => {
       const aTitle = computeTitleMatchScore(a[0], candidates);
       const bTitle = computeTitleMatchScore(b[0], candidates);
       return bTitle - aTitle;
     });
-
+  
     const [, entry] = pool[0] || [];
     const eps = Array.isArray(entry?.episodes) ? entry.episodes : [];
     const pickUrl = (ep) =>
       preferDubbed ? (ep.mp4 || ep.hls || ep.directUrl || null) : (ep.hls || ep.mp4 || ep.directUrl || null);
-
+  
     return eps
       .map((ep, idx) => ({
         number: typeof ep.number === 'number' ? ep.number : (idx + 1),
