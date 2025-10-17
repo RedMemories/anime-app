@@ -11,10 +11,10 @@ export default function DetailScreen({ route, navigation }) {
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
   const CATALOG_URL = 'https://raw.githubusercontent.com/RedMemories/anime-app/master/public/catalog.json';
-  
+
   const [catalog, setCatalog] = useState(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
-  
+
   const loadCatalog = async () => {
     setCatalogLoading(true);
     try {
@@ -28,7 +28,7 @@ export default function DetailScreen({ route, navigation }) {
           'catalog.json parse failed',
           { status: res.status, contentType: res.headers.get('content-type') }
         );
-        console.warn('head:', body.slice(0, 200)); 
+        console.warn('head:', body.slice(0, 200));
       }
     } catch (e) {
       console.warn('fetch catalog.json failed', e);
@@ -36,7 +36,7 @@ export default function DetailScreen({ route, navigation }) {
       setCatalogLoading(false);
     }
   };
-  
+
   useEffect(() => {
     loadCatalog();
   }, []);
@@ -74,35 +74,35 @@ export default function DetailScreen({ route, navigation }) {
   const slug = (s) => (s || '').toLowerCase().replace(/[\W_]+/g, '');
 
   const hasSubItaMarker = (s) => {
-      const v = (s || '').toLowerCase();
-      const hasSubWord = v.includes('sub') || v.includes('hardsub');
-      const hasIta = v.includes('ita');
-      const patterns = ['_SUB_ITA'];
-      const direct = patterns.some((p) => v.includes(p));
-      return (hasSubWord && hasIta) || direct;
+    const v = (s || '').toLowerCase();
+    const hasSubWord = v.includes('sub') || v.includes('hardsub');
+    const hasIta = v.includes('ita');
+    const patterns = ['_SUB_ITA'];
+    const direct = patterns.some((p) => v.includes(p));
+    return (hasSubWord && hasIta) || direct;
   };
-  
+
   const detectVersion = (s) => {
-      const v = (s || '').toLowerCase();
-      const hasIta = v.includes('ita');
-      const isSubbed = hasSubItaMarker(v);
-      const dubHints = v.includes('dub') || v.includes('doppi') || v.includes('doppiat') || v.includes('-ita');
-      const isDubbed = !isSubbed && (dubHints || (hasIta && !isSubbed));
-  
-      let audioLang = null;
-      if (isDubbed) {
-          if (hasIta) audioLang = 'ita';
-          else if (v.includes('eng')) audioLang = 'eng';
-          else if (v.includes('jpn') || v.includes('jp')) audioLang = 'ja';
-      }
-  
-      const subLangs = [];
-      if (isSubbed) {
-          if (hasIta) subLangs.push('ita');
-          if (v.includes('eng')) subLangs.push('eng');
-      }
-  
-      return { isDubbed, isSubbed, audioLang, subLangs };
+    const v = (s || '').toLowerCase();
+    const hasIta = v.includes('ita');
+    const isSubbed = hasSubItaMarker(v);
+    const dubHints = v.includes('dub') || v.includes('doppi') || v.includes('doppiat') || v.includes('-ita');
+    const isDubbed = !isSubbed && (dubHints || (hasIta && !isSubbed));
+
+    let audioLang = null;
+    if (isDubbed) {
+      if (hasIta) audioLang = 'ita';
+      else if (v.includes('eng')) audioLang = 'eng';
+      else if (v.includes('jpn') || v.includes('jp')) audioLang = 'ja';
+    }
+
+    const subLangs = [];
+    if (isSubbed) {
+      if (hasIta) subLangs.push('ita');
+      if (v.includes('eng')) subLangs.push('eng');
+    }
+
+    return { isDubbed, isSubbed, audioLang, subLangs };
   };
 
   const scoreVersion = (version) => {
@@ -130,9 +130,9 @@ export default function DetailScreen({ route, navigation }) {
     candidates.forEach((c) => {
       const cs = slug(c);
       let s = 0;
-      if (ks === cs) s = 3;                          
-      else if (ks.startsWith(cs) || cs.startsWith(ks)) s = 2; 
-      else if (ks.includes(cs) || cs.includes(ks)) s = 1;     
+      if (ks === cs) s = 3;
+      else if (ks.startsWith(cs) || cs.startsWith(ks)) s = 2;
+      else if (ks.includes(cs) || cs.includes(ks)) s = 1;
       const diff = Math.abs(ks.length - cs.length);
       if (s > best) {
         best = s;
@@ -166,7 +166,7 @@ export default function DetailScreen({ route, navigation }) {
       const aTitle = computeTitleMatchScore(a[0], candidates);
       const bTitle = computeTitleMatchScore(b[0], candidates);
       if (bTitle !== aTitle) return bTitle - aTitle;
-      return 0; 
+      return 0;
     });
 
     const [, entry] = pool[0];
@@ -200,7 +200,7 @@ export default function DetailScreen({ route, navigation }) {
   useEffect(() => {
     fetchEpisodes(1);
   }, [anime?.mal_id]);
-  
+
 
   const getPlayable = (a) => {
     const epUrl = Array.isArray(a?.episodes) ? a.episodes.find(e => typeof e?.url === 'string')?.url : null;
@@ -234,6 +234,47 @@ export default function DetailScreen({ route, navigation }) {
       .replace(/\n{2,}/g, '\n')
       .trim();
   };
+
+  // Fallback: ricava gli episodi direttamente dal catalogo se Jikan non ne restituisce
+  const getFallbackCatalogEpisodes = (animeObj) => {
+    if (!catalog) return [];
+
+    const candidates = [
+      slug(animeObj?.title),
+      slug(animeObj?.title_english),
+      slug(animeObj?.title_japanese),
+    ].filter(Boolean);
+
+    const matched = Object.entries(catalog).filter(([key]) => {
+      const keySlug = slug(key);
+      return candidates.some(s => keySlug === s || keySlug.includes(s) || s.includes(keySlug));
+    });
+    if (matched.length === 0) return [];
+
+    const dubKeys = matched.filter(([key]) => key.toLowerCase().includes('-ita'));
+    const subKeys = matched.filter(([key]) => !key.toLowerCase().includes('-ita'));
+    const pool = preferDubbed ? (dubKeys.length ? dubKeys : matched) : (subKeys.length ? subKeys : matched);
+
+    pool.sort((a, b) => {
+      const aTitle = computeTitleMatchScore(a[0], candidates);
+      const bTitle = computeTitleMatchScore(b[0], candidates);
+      return bTitle - aTitle;
+    });
+
+    const [, entry] = pool[0] || [];
+    const eps = Array.isArray(entry?.episodes) ? entry.episodes : [];
+    const pickUrl = (ep) =>
+      preferDubbed ? (ep.mp4 || ep.hls || ep.directUrl || null) : (ep.hls || ep.mp4 || ep.directUrl || null);
+
+    return eps
+      .map((ep, idx) => ({
+        number: typeof ep.number === 'number' ? ep.number : (idx + 1),
+        title: ep.title || null,
+        url: pickUrl(ep),
+      }))
+      .filter((e) => typeof e.url === 'string');
+  };
+
 
   const cleanSynopsis = sanitizeSynopsis(anime?.synopsis) || 'Nessuna descrizione disponibile.';
   const playable = getPlayable(anime);
@@ -307,7 +348,43 @@ export default function DetailScreen({ route, navigation }) {
       {episodesLoading && episodes.length === 0 ? (
         <ActivityIndicator color="#fff" size="large" />
       ) : episodes.length === 0 ? (
-        <Text style={styles.text}>Nessun episodio disponibile.</Text>
+        (() => {
+          const fallbackEps = getFallbackCatalogEpisodes(anime);
+          if (fallbackEps.length === 0) {
+            return <Text style={styles.text}>Nessun episodio disponibile.</Text>;
+          }
+          return (
+            <View style={styles.episodesList}>
+              {fallbackEps.map((fe, idx) => (
+                <TouchableOpacity
+                  key={`${anime.mal_id}-fallback-${fe.number}-${idx}`}
+                  style={styles.episodeItem}
+                  onPress={() => {
+                    const epTitle = fe.title || `Episodio ${fe.number}`;
+                    const videoUrl = fe.url;
+                    navigation.navigate('Player', {
+                      videoUrl,
+                      type: 'video',
+                      title: `${anime.title} - ${epTitle}`,
+                      posterUrl: imageUrl,
+                      animeId: anime.mal_id,
+                    });
+                    navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
+                  }}
+                >
+                  <View style={styles.episodeLeft}>
+                    <Text style={styles.episodeNumber}>{`Ep ${fe.number}`}</Text>
+                  </View>
+                  <View style={styles.episodeRight}>
+                    <Text style={styles.episodeTitle} numberOfLines={1}>
+                      {fe.title || `Episodio ${fe.number}`}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          );
+        })()
       ) : (
         <View style={styles.episodesList}>
           {episodes.slice().reverse().map((ep, idx) => (
@@ -327,7 +404,7 @@ export default function DetailScreen({ route, navigation }) {
                   animeId: anime.mal_id,
                 });
                 navigation.getParent()?.setOptions({ tabBarStyle: { display: 'none' } });
-            }}
+              }}
             >
               <View style={styles.episodeLeft}>
                 <Text style={styles.episodeNumber}>
@@ -433,4 +510,3 @@ const styles = StyleSheet.create({
   },
   readMoreText: { color: '#fff' },
 });
-
