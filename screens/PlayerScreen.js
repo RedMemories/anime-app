@@ -97,9 +97,9 @@ export default function PlayerScreen({ route, navigation }) {
         const d = player.duration;
         if (typeof d === 'number' && d > 0) setDuration(d);
         const now = Math.floor(currentTime || 0);
-        if (now - (lastSavedRef.current || 0) >= 5) {
+        if (now - lastSavedRef.current >= 5) {
             lastSavedRef.current = now;
-            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => { });
+            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => {});
         }
     });
 
@@ -107,9 +107,7 @@ export default function PlayerScreen({ route, navigation }) {
     const [duration, setDuration] = useState(0);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [rate, setRate] = useState(1);
     const [showOverlay, setShowOverlay] = useState(true);
-    const [settingsOpen, setSettingsOpen] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
     const [scrubTarget, setScrubTarget] = useState(0);
@@ -163,7 +161,7 @@ export default function PlayerScreen({ route, navigation }) {
         const now = Math.floor(currentTime || 0);
         if (now - lastSavedRef.current >= 5) {
             lastSavedRef.current = now;
-            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => { });
+            AsyncStorage.setItem(progressKey, JSON.stringify({ position: now })).catch(() => {});
         }
     });
     useEventListener(player, 'durationChange', ({ duration }) => {
@@ -206,7 +204,13 @@ export default function PlayerScreen({ route, navigation }) {
     };
 
     const setSpeed = (r) => {
-        player.rate = r;
+        // Aggiorna subito la velocità e lo stato locale
+        try {
+            player.rate = r;
+            setRate(r);
+            // Se necessario, forza un play per applicare la rate in alcuni player
+            if (!isPlaying) player.play();
+        } catch {}
     };
 
     const formatTime = (sec) => {
@@ -224,12 +228,23 @@ export default function PlayerScreen({ route, navigation }) {
         setShowOverlay((v) => !v);
     };
     useEffect(() => {
-        const parent = navigation.getParent();
-        parent?.setOptions({ tabBarStyle: { display: 'none', backgroundColor: '#111' } });
+        const parent = navigation.getParent?.();
+        parent?.setOptions({
+            tabBarStyle: { display: 'none' },
+        });
+
         return () => {
-            parent?.setOptions({ tabBarStyle: { display: 'flex', backgroundColor: '#111' } });
+            // Ripristina la tab bar all'uscita
+            parent?.setOptions({
+                tabBarStyle: {
+                    display: 'flex',
+                    backgroundColor: '#111',
+                },
+                tabBarActiveTintColor: '#ff5722',
+                tabBarInactiveTintColor: '#aaa',
+            });
         };
-    }, []);
+    }, [navigation]);
 
     return (
         <View style={styles.container}>
@@ -250,9 +265,7 @@ export default function PlayerScreen({ route, navigation }) {
                         </TouchableOpacity>
                         <Text style={styles.topTitle} numberOfLines={1}>{title || 'Riproduzione'}</Text>
                         <View style={styles.topRight}>
-                            <TouchableOpacity style={styles.topBtn} onPress={() => setSettingsOpen(true)}>
-                                <Ionicons name="settings-outline" size={20} color="#fff" />
-                            </TouchableOpacity>
+                            {/* Rimosso pulsante impostazioni */}
                             <TouchableOpacity style={styles.topBtn} onPress={toggleFullscreen}>
                                 <MaterialIcons name={isFullscreen ? 'fullscreen-exit' : 'fullscreen'} size={20} color="#fff" />
                             </TouchableOpacity>
@@ -288,95 +301,26 @@ export default function PlayerScreen({ route, navigation }) {
                             {formatTime(position)} / {formatTime(duration)}
                         </Text>
 
-                        {/* Wrapper slider per misurare larghezza e mostrare la bolla */}
-                        <View
-                            style={styles.sliderWrap}
-                            onLayout={(e) => setSliderWidth(e.nativeEvent.layout.width)}
-                        >
-                            {/* Marcatore verticale durante lo scrubbing */}
-                            {isScrubbing && duration > 0 && (
-                                <View
-                                    style={[
-                                        styles.scrubMarker,
-                                        { left: Math.max(0, Math.min(sliderWidth, (scrubTarget / duration) * sliderWidth)) }
-                                    ]}
-                                />
-                            )}
-
-                            {/* Bolla con orario di destinazione */}
-                            {isScrubbing && duration > 0 && (
-                                <View
-                                    style={[
-                                        styles.scrubBubble,
-                                        {
-                                            left: Math.max(
-                                                0,
-                                                Math.min(
-                                                    sliderWidth - 48,
-                                                    (scrubTarget / duration) * sliderWidth - 24
-                                                )
-                                            )
-                                        }
-                                    ]}
-                                >
-                                    <Text style={styles.scrubBubbleText}>{formatTime(scrubTarget)}</Text>
-                                </View>
-                            )}
-
-                            <Slider
-                                style={styles.slider}
-                                minimumValue={0}
-                                maximumValue={duration || 1}
-                                value={position}
-                                step={1}
-                                onSlidingStart={() => {
-                                    setShowOverlay(true);
-                                    setIsScrubbing(true);
-                                }}
-                                onValueChange={(sec) => {
-                                    setShowOverlay(true);
-                                    setIsScrubbing(true);
-                                    setScrubTarget(sec);
-                                }}
-                                onSlidingComplete={(sec) => {
-                                    const d = duration || player.duration || 0;
-                                    const target = Math.max(0, Math.min(d, sec));
-                                    player.currentTime = target;
-                                    setIsScrubbing(false);
-                                }}
-                                minimumTrackTintColor="#e50914"
-                                maximumTrackTintColor="rgba(255,255,255,0.3)"
-                                thumbTintColor="#e50914"
-                            />
-                        </View>
-
-                        <TouchableOpacity onPress={() => setSettingsOpen(true)} style={[styles.bottomBtn, styles.speedBtn]}>
-                            <Text style={styles.speedText}>{`${rate}x`}</Text>
-                        </TouchableOpacity>
+                        <Slider
+                            style={styles.slider}
+                            minimumValue={0}
+                            maximumValue={duration || 1}
+                            value={position}
+                            step={1}
+                            onSlidingStart={() => setShowOverlay(true)}
+                            onSlidingComplete={(sec) => {
+                                const d = duration || player.duration || 0;
+                                player.currentTime = Math.max(0, Math.min(d, sec));
+                            }}
+                            minimumTrackTintColor="#e50914"
+                            maximumTrackTintColor="rgba(255,255,255,0.3)"
+                            thumbTintColor="#e50914"
+                        />
+                        {/* Rimosso pulsante velocità */}
                     </View>
                 </View>
             )}
-
-            <Modal visible={settingsOpen} transparent animationType="fade" onRequestClose={() => setSettingsOpen(false)}>
-                <Pressable style={styles.modalBackdrop} onPress={() => setSettingsOpen(false)}>
-                    <View style={styles.modalCard}>
-                        <Text style={styles.modalTitle}>Impostazioni</Text>
-                        <View style={styles.modalSection}>
-                            <Text style={styles.modalLabel}>Velocità</Text>
-                            <View style={styles.speedRow}>
-                                {[0.5, 0.75, 1, 1.25, 1.5, 2].map((r) => (
-                                    <TouchableOpacity key={String(r)} style={styles.speedChoice} onPress={() => setSpeed(r)}>
-                                        <Text style={[styles.speedChoiceText, rate === r && styles.speedChoiceTextActive]}>
-                                            {r}x
-                                        </Text>
-                                    </TouchableOpacity>
-                                ))}
-                            </View>
-                        </View>
-                    </View>
-                </Pressable>
-            </Modal>
-
+            {/* Rimosso il Modal impostazioni */}
             <StatusBar hidden />
         </View>
     );
