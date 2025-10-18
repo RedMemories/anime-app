@@ -2,7 +2,7 @@
   "expo": {
     "name": "AnimStream",
     "slug": "animstream",
-    "version": "1.2.0",
+    "version": "1.2.1",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -21,7 +21,8 @@
         "backgroundColor": "#111111"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.anonymous.animeapp"
+      "package": "com.anonymous.animeapp",
+      "versionCode": 2
     },
     "web": {
       "favicon": "./assets/favicon.png"
