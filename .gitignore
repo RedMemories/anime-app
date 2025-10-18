@@ -1,6 +1,10 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
 #cartella
+tools/config.json
+tools/scrape-animesaturn.js
+tools/server.js
+tools/state.json
 # dependencies
 node_modules/
 
