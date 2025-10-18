@@ -71,10 +71,19 @@ export default function DetailScreen({ route, navigation }) {
 
   const stripKeyMarkers = (s) => (s || '')
     .replace(/(_sub_ita|_ita|-ita)/ig, '')
-    .replace(/[-_]?a{3,}$/i, '');
+    .replace(/[-_]?a{1,}$/i, '');
   const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
 
-  const isSubKey = (s) => ((s || '').toLowerCase().includes('_sub_ita'));
+  const isSubKey = (s) => {
+    const v = (s || '').toLowerCase();
+    return (
+      v.includes('_sub_ita') ||
+      /\bsub\b/.test(v) ||
+      /\bsottotitol\w*\b/.test(v) ||
+      /(^|[-_])a$/.test(v)
+    );
+  };
+
   const isDubKey = (s) => {
     const v = (s || '').toLowerCase();
     return (v.includes('_ita') || v.includes('-ita')) && !v.includes('_sub_ita');
@@ -118,6 +127,16 @@ export default function DetailScreen({ route, navigation }) {
     }
 
     return { isDubbed, isSubbed, audioLang, subLangs };
+  };
+
+    const hasSubItaMarker = (s) => {
+    const v = (s || '').toLowerCase();
+    return (
+      v.includes('_sub_ita') ||
+      /\bsub\b/.test(v) ||
+      /\bsottotitol\w*\b/.test(v) ||
+      /(^|[-_])a$/.test(v)
+    );
   };
 
   const scoreVersion = (version) => {
