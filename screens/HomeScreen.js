@@ -11,7 +11,8 @@ import {
   StatusBar,
   ActivityIndicator,
   Animated,
-  Dimensions
+  Dimensions,
+  useWindowDimensions
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +31,7 @@ export default function HomeScreen({ navigation }) {
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
   const scrollX = React.useRef(new Animated.Value(0)).current;
+  const { width: screenWidth } = useWindowDimensions();
 
   // Filtri rafforzati: solo anime giapponesi e SFW
   const bannedProducersOrStudios = [
@@ -253,7 +255,7 @@ export default function HomeScreen({ navigation }) {
   const renderInnovativeCarousel = () => {
     if (loading.top || inEvidenza.length === 0) return null;
 
-    const { width } = Dimensions.get('window');
+    const width = screenWidth;
     const SPACING = 16;
     const ITEM_WIDTH = Math.round(width * 0.72);
     const ITEM_HEIGHT = Math.round(ITEM_WIDTH * 0.6);
@@ -271,7 +273,7 @@ export default function HomeScreen({ navigation }) {
           snapToInterval={ITEM_WIDTH + SPACING}
           decelerationRate="fast"
           bounces={false}
-          contentContainerStyle={{ paddingHorizontal: (width - ITEM_WIDTH) / 2 }}
+          contentContainerStyle={{ paddingHorizontal: Math.max(0, (width - ITEM_WIDTH) / 2) }}
           onScroll={Animated.event(
             [{ nativeEvent: { contentOffset: { x: scrollX } } }],
             { useNativeDriver: true }
