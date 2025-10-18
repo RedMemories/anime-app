@@ -252,7 +252,7 @@ export default function PlayerScreen({ route, navigation }) {
                 <VideoView
                     style={styles.video}
                     player={player}
-                    contentFit={isFullscreen ? 'cover' : 'contain'}
+                    contentFit={'contain'}
                     nativeControls={false}
                 />
             </Pressable>
