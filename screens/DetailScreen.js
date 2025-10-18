@@ -10,7 +10,7 @@ export default function DetailScreen({ route, navigation }) {
   const [episodesHasNextPage, setEpisodesHasNextPage] = useState(false);
   const [episodesLoading, setEpisodesLoading] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
-  const CATALOG_URL = 'https://raw.githubusercontent.com/RedMemories/anime-app/master/public/catalog.json';
+  const CATALOG_URL = 'https://raw.githubusercontent.com/RedMemories/anime-app/refs/heads/master/public/catalog.json';
 
   const [catalog, setCatalog] = useState(null);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -80,10 +80,10 @@ export default function DetailScreen({ route, navigation }) {
   };
 
   // Estendo la normalizzazione per rimuovere '-aa' / '_aa' oltre ai marker ITA
+  // Funzioni di normalizzazione
   const stripKeyMarkers = (s) => (s || '')
-    .replace(/(_sub_ita|_ita|-ita|-aa|_aa)/ig, '')
-    .replace(/(?:[-_]?a{3,})$/i, '')
-    .replace(/(?:-a|_a)$/i, '');
+  .replace(/(_sub_ita|_ita|-ita)/ig, '')
+  .replace(/[-_]?a{3,}$/i, '')
   const keyBaseSlug = (s) => slug(stripKeyMarkers(s));
 
   const detectVersion = (s) => {
